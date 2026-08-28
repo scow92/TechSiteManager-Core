@@ -1,0 +1,9 @@
+{
+  "name": "TechSiteManager",
+  "short_name": "TechSiteManager",
+  "description": "Generic structured-cabling planning and records",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#081018",
+  "theme_color": "#0b1620"
+}

@@ -1,0 +1,29 @@
+schemaVersion: techsitemanager.io/import-profile/v1
+id: example.facility-json-v1
+aliases:
+  location: site
+mappings:
+  plan: workPackage
+defaults:
+  status: planned
+statusMap:
+  proposed: planned
+  installed: complete
+categoryMap:
+  optical: fibre
+  metallic: copper
+fieldOwnership:
+  packageReference: source-owned
+  externalReference: source-owned
+  projectReference: source-default
+  title: source-owned
+  description: user-owned
+  status: source-default
+identity:
+  source: sourceId
+  workPackage: package.id
+  workItem: items.id
+  connection: connections.id
+  segment: connections.segments.id
+transforms:
+  - example.normalize-label

@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+data
+coverage
+test-results
+playwright-report
+*.db*
+*.log
+*.tgz
+sbom.cdx.json
+.env*
+docs
+server/test

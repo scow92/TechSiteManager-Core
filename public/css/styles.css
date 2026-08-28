@@ -1,0 +1,28 @@
+:root { color-scheme: dark; --bg:#081018; --panel:#101d29; --line:#284056; --text:#edf5fb; --muted:#9eb3c4; --accent:#55c2ff; --danger:#ff7b7b; }
+* { box-sizing:border-box; }
+body { margin:0; min-height:100vh; font:16px/1.45 system-ui,sans-serif; background:linear-gradient(145deg,#071019,#0d1c28); color:var(--text); }
+header { min-height:64px; padding:12px clamp(16px,4vw,48px); display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); background:rgba(8,16,24,.92); position:sticky; top:0; z-index:2; }
+.brand { color:var(--text); font-size:1.2rem; font-weight:750; text-decoration:none; }
+nav { display:flex; gap:16px; align-items:center; }
+nav a { color:var(--muted); text-decoration:none; }
+main { width:min(1100px,calc(100% - 32px)); margin:32px auto 80px; }
+h1,h2 { line-height:1.15; }
+.panel,.card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; box-shadow:0 18px 50px rgba(0,0,0,.18); }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+.stack { display:grid; gap:14px; }
+label { display:grid; gap:6px; color:var(--muted); }
+input,textarea,select,button { font:inherit; }
+input,textarea,select { width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:9px; background:#09141e; color:var(--text); }
+textarea { min-height:160px; resize:vertical; }
+button,.button { border:0; border-radius:9px; padding:10px 15px; background:var(--accent); color:#00131f; font-weight:700; cursor:pointer; }
+button.secondary { background:#263d50; color:var(--text); }
+.toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin-bottom:20px; }
+.toolbar label { flex:1; min-width:240px; }
+.muted { color:var(--muted); }
+.error { color:var(--danger); }
+.badge { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:2px 9px; color:var(--muted); font-size:.85rem; }
+pre { overflow:auto; white-space:pre-wrap; background:#071019; border:1px solid var(--line); border-radius:9px; padding:14px; }
+#toast { position:fixed; right:18px; bottom:18px; max-width:380px; padding:12px 16px; border-radius:9px; background:#152a3a; transform:translateY(120px); transition:.2s; }
+#toast.show { transform:translateY(0); }
+@media (max-width:700px) { header { align-items:flex-start; gap:12px; } nav { flex-wrap:wrap; justify-content:flex-end; } main { margin-top:20px; } }
+@media print { header,button,.toolbar { display:none!important; } body { background:white; color:black; } .panel,.card { box-shadow:none; border:1px solid #bbb; } }

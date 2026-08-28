@@ -1,0 +1,100 @@
+'use strict';
+
+const express = require('express');
+const crypto = require('crypto');
+const db = require('../db/knex');
+const auth = require('../lib/auth');
+const { knownKeys, string, enumeration, integer } = require('../lib/validation');
+const { httpError } = require('../lib/errors');
+const config = require('../config');
+const audit = require('../lib/audit');
+
+const router = express.Router();
+
+function publicUser(user) {
+  return { publicId: user.public_id, username: user.username, displayName: user.display_name, email: user.email, role: user.role, active: Boolean(user.active), version: user.version };
+}
+
+router.get('/status', async (req, res, next) => {
+  try {
+    const [{ count }] = await db('users').count({ count: '*' });
+    res.json({ setupNeeded: Number(count) === 0, user: req.user ? publicUser(req.user) : null });
+  } catch (error) { next(error); }
+});
+
+router.post('/setup', async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['username', 'password', 'displayName', 'email']);
+    const username = string(req.body.username, 'username', { required: true, max: 64, pattern: /^[A-Za-z0-9._-]+$/ });
+    const password = string(req.body.password, 'password', { required: true, min: 12, max: 200 });
+    const displayName = string(req.body.displayName, 'displayName', { required: true, max: 120 });
+    const email = string(req.body.email, 'email', { max: 255 });
+    const user = await db.transaction(async (trx) => {
+      const [{ count }] = await trx('users').count({ count: '*' });
+      if (Number(count)) throw httpError(409, 'setup_complete', 'Initial setup is already complete');
+      const [id] = await trx('users').insert({ public_id: crypto.randomUUID(), username, password_hash: await auth.hashPassword(password), role: 'admin', display_name: displayName, email, active: 1 });
+      const created = await trx('users').where({ id }).first();
+      await audit.record(trx, created.id, 'auth.setup', 'user', created.public_id, { status: 'active' });
+      return created;
+    });
+    await auth.createSession(user.id, res, config.secureTransport);
+    res.status(201).json(publicUser(user));
+  } catch (error) { next(error); }
+});
+
+router.post('/login', async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['username', 'password']);
+    const username = string(req.body.username, 'username', { required: true, max: 64 });
+    const password = string(req.body.password, 'password', { required: true, max: 200 });
+    const user = await db('users').whereRaw('lower(username) = lower(?)', [username]).first();
+    if (!user || !user.active || !(await auth.verifyPassword(password, user.password_hash))) throw httpError(401, 'invalid_credentials', 'Invalid username or password');
+    await auth.createSession(user.id, res, config.secureTransport);
+    res.json(publicUser(user));
+  } catch (error) { next(error); }
+});
+
+router.post('/logout', auth.requireSession, async (req, res, next) => {
+  try { await auth.revoke(req, res); res.status(204).end(); } catch (error) { next(error); }
+});
+
+router.get('/users', auth.requireAdmin, async (_req, res, next) => {
+  try { res.json((await db('users').orderBy('username')).map(publicUser)); } catch (error) { next(error); }
+});
+
+router.post('/users', auth.requireAdmin, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['username', 'password', 'displayName', 'email', 'role', 'active']);
+    const user = {
+      public_id: crypto.randomUUID(),
+      username: string(req.body.username, 'username', { required: true, max: 64, pattern: /^[A-Za-z0-9._-]+$/ }),
+      password_hash: await auth.hashPassword(string(req.body.password, 'password', { required: true, min: 12, max: 200 })),
+      display_name: string(req.body.displayName, 'displayName', { required: true, max: 120 }),
+      email: string(req.body.email, 'email', { max: 255 }),
+      role: enumeration(req.body.role, 'role', ['admin', 'manager', 'engineer', 'viewer'], true),
+      active: req.body.active === false ? 0 : 1
+    };
+    const [id] = await db('users').insert(user);
+    res.status(201).json(publicUser(await db('users').where({ id }).first()));
+  } catch (error) { next(error); }
+});
+
+router.put('/users/:publicId', auth.requireAdmin, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['displayName', 'email', 'role', 'active', '_baseVersion']);
+    const baseVersion = integer(req.body._baseVersion, '_baseVersion', { required: true, min: 0 });
+    const changes = {
+      display_name: string(req.body.displayName, 'displayName', { required: true, max: 120 }),
+      email: string(req.body.email, 'email', { max: 255 }),
+      role: enumeration(req.body.role, 'role', ['admin', 'manager', 'engineer', 'viewer'], true),
+      active: req.body.active ? 1 : 0,
+      version: baseVersion + 1,
+      updated_at: db.fn.now()
+    };
+    const updated = await db('users').where({ public_id: req.params.publicId, version: baseVersion }).update(changes);
+    if (!updated) throw httpError(409, 'version_conflict', 'The user changed since it was loaded');
+    res.json(publicUser(await db('users').where({ public_id: req.params.publicId }).first()));
+  } catch (error) { next(error); }
+});
+
+module.exports = router;

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "example.test/facility-plan/v1",
+  "sourceId": "demo-facility-plan-001",
+  "revision": "1",
+  "site": { "code": "LAB-01", "name": "Northwind Demo Lab" },
+  "package": {
+    "id": "demo-package-100",
+    "reference": "PKG-DEMO-100",
+    "externalReference": "EXT-DEMO-100",
+    "projectReference": "PROJECT-ORBIT",
+    "title": "Demo lab cross-connects",
+    "description": "Fictional installation plan",
+    "status": "planned"
+  },
+  "items": [
+    { "id": "task-a", "reference": "ITEM-DEMO-A", "title": "Prepare demonstration rack", "description": "Fictional task" }
+  ],
+  "connections": [
+    {
+      "id": "link-alpha",
+      "reference": "LINK-DEMO-ALPHA",
+      "media": "optical",
+      "description": "Fictional lab link",
+      "segments": [
+        { "id": "span-a", "reference": "SPAN-DEMO-A", "from": "demo-device-a:port-1", "to": "demo-panel-a:port-1", "lengthMetres": 12.5 }
+      ]
+    }
+  ]
+}

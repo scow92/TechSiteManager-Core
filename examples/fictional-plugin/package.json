@@ -1,0 +1,9 @@
+{
+  "name": "@techsitemanager/fictional-facility-plugin",
+  "version": "1.0.0",
+  "description": "Fictional import-provider example for TechSiteManager",
+  "main": "index.cjs",
+  "type": "commonjs",
+  "license": "UNLICENSED",
+  "files": ["index.cjs", "provider.cjs", "profile.yaml", "README.md"]
+}

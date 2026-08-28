@@ -1,0 +1,51 @@
+{
+  "name": "techsitemanager",
+  "version": "1.0.0-rc.1",
+  "private": true,
+  "description": "Generic planning and record management for structured-cabling work",
+  "main": "server/server.js",
+  "files": [
+    "server",
+    "public",
+    "config",
+    "examples/fictional-plugin",
+    "docs",
+    "README.md",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "COPYRIGHT.md",
+    "Dockerfile",
+    "docker-compose.yml"
+  ],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node server/server.js",
+    "migrate": "node server/scripts/migrate.js",
+    "lint": "eslint .",
+    "syntax": "find public server examples -type f \\( -name '*.js' -o -name '*.cjs' \\) -print0 | xargs -0 -n1 node --check",
+    "test": "node --test server/test/*.test.js",
+    "test:e2e": "node server/test/e2e.playwright.js",
+    "test:recovery": "node --test server/test/recovery.test.js",
+    "test:all": "npm run lint && npm run syntax && npm test && npm run test:e2e",
+    "backup": "node server/scripts/backup.js",
+    "restore": "node server/scripts/restore.js",
+    "sbom": "npm sbom --sbom-format cyclonedx > sbom.cdx.json",
+    "scan:public": "node server/scripts/disclosure-scan.js"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "better-sqlite3": "12.10.0",
+    "express": "^4.21.2",
+    "knex": "^3.1.0",
+    "safe-regex2": "^5.0.0",
+    "semver": "^7.7.2",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@techsitemanager/fictional-facility-plugin": "file:examples/fictional-plugin",
+    "eslint": "^10.8.1",
+    "globals": "^17.9.0",
+    "playwright": "^1.62.1"
+  }
+}

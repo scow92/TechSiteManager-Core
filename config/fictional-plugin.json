@@ -1,0 +1,10 @@
+{
+  "plugins": [
+    {
+      "package": "@techsitemanager/fictional-facility-plugin",
+      "required": true,
+      "expectedVersion": "1.0.0",
+      "config": {}
+    }
+  ]
+}

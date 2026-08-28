@@ -1,0 +1,54 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const root = path.join(__dirname, '..', '..');
+
+test('service worker shell exactly covers HTML static dependencies and excludes APIs', () => {
+  const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  const worker = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
+  const urls = [...html.matchAll(/(?:src|href)="(\/[^"]+)"/g)].map((match) => match[1]).filter((url) => !url.startsWith('/api/'));
+  for (const url of urls) assert.match(worker, new RegExp(url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(worker, /url\.pathname\.startsWith\('\/api\/'\)/);
+  assert.doesNotMatch(worker, /\/api\/[A-Za-z]/);
+});
+
+test('service worker uses network-first shell reads and never handles cross-origin requests', async () => {
+  const listeners = {};
+  const cacheWrites = [];
+  const context = {
+    URL,
+    Promise,
+    fetch: async () => ({ ok: true, clone() { return this; } }),
+    caches: { open: async () => ({ addAll: async () => {}, put: async (request) => cacheWrites.push(request.url) }), keys: async () => [], match: async () => null, delete: async () => true },
+    self: { location: { origin: 'https://example.invalid' }, clients: { claim: async () => {} }, addEventListener(type, handler) { listeners[type] = handler; } }
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8'), context);
+  let responsePromise = null;
+  listeners.fetch({ request: { url: 'https://example.invalid/api/sites', method: 'GET' }, respondWith(value) { responsePromise = value; } });
+  assert.equal(responsePromise, null);
+  listeners.fetch({ request: { url: 'https://different.invalid/app.js', method: 'GET' }, respondWith(value) { responsePromise = value; } });
+  assert.equal(responsePromise, null);
+  listeners.fetch({ request: { url: 'https://example.invalid/js/app.js', method: 'GET' }, respondWith(value) { responsePromise = value; } });
+  await responsePromise; await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(cacheWrites, ['https://example.invalid/js/app.js']);
+});
+
+test('IndexedDB schema separates disposable caches from durable queues', () => {
+  const source = fs.readFileSync(path.join(root, 'public', 'js', 'idb.js'), 'utf8');
+  for (const store of ['reference-cache', 'dirty-work-packages', 'operation-queue', 'dead-letters', 'pending-logout']) assert.match(source, new RegExp(store));
+  assert.match(source, /tx\.oncomplete/);
+  assert.doesNotMatch(source, /localStorage/);
+});
+
+test('browser loads no provider scripts and renders dynamic values with DOM APIs', () => {
+  const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  const source = fs.readFileSync(path.join(root, 'public', 'js', 'app.js'), 'utf8');
+  assert.doesNotMatch(html, /plugin|provider/i);
+  assert.doesNotMatch(source, /innerHTML|insertAdjacentHTML|eval\s*\(/);
+  assert.match(source, /document\.createElement/);
+});

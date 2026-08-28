@@ -1,0 +1,31 @@
+services:
+  web:
+    build: .
+    image: techsitemanager:local
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      PROXY_MODE: direct
+      SECURE_TRANSPORT: "false"
+      DATA_DIR: /app/data
+    volumes:
+      - techsitemanager-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:mode=700,uid=65532,gid=65532
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  techsitemanager-data:
