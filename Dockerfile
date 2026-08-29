@@ -19,6 +19,7 @@ WORKDIR /app
 COPY --from=dependencies --chown=65532:65532 /app/runtime-data ./data
 COPY --from=dependencies --chown=65532:65532 /app/node_modules ./node_modules
 COPY --chown=65532:65532 package.json ./package.json
+COPY --chown=65532:65532 LICENSE COPYRIGHT.md ./
 COPY --chown=65532:65532 server ./server
 COPY --chown=65532:65532 public ./public
 EXPOSE 3000

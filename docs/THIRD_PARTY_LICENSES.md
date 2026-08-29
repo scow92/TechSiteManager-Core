@@ -41,7 +41,8 @@ library.
 The container build uses the official Node.js slim image as a build stage and
 a digest-pinned Google distroless Node.js image as the runtime base. The final
 image retains the runtime base's own licence material and the licence files
-inside production npm package directories. TechSiteManager does not relabel
+inside production npm package directories. The final image also carries the
+project `LICENSE` and `COPYRIGHT.md`. TechSiteManager does not relabel
 base-image or dependency code as `Apache-2.0`.
 
 ## NOTICE decision
