@@ -3,24 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#0b1620">
+  <meta name="theme-color" content="#0f1419">
   <meta name="description" content="Generic structured-cabling planning and records">
   <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/css/styles.css">
   <title>TechSiteManager</title>
 </head>
-<body>
-  <header>
-    <a class="brand" href="#home">TechSiteManager</a>
-    <nav id="nav" hidden>
-      <a href="#home">Work Packages</a>
-      <a href="#sites">Sites</a>
-      <a href="#import">Import</a>
-      <button id="logout" type="button">Sign out</button>
-    </nav>
-  </header>
-  <main id="app" aria-live="polite"><p class="loading">Loading…</p></main>
-  <div id="toast" role="status" aria-live="polite"></div>
+<body class="auth-active">
+  <div id="shell" class="app-shell">
+    <aside id="sidebar" class="sidebar" aria-label="Application navigation">
+      <div class="brand-row">
+        <a class="brand" href="#home" aria-label="Home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span><strong>TechSiteManager</strong><small id="brand-context">Planning and records</small></span>
+        </a>
+        <button id="nav-collapse" class="icon-button nav-collapse" type="button" aria-label="Minimize navigation">«</button>
+      </div>
+      <nav id="nav" class="nav" hidden>
+        <p class="nav-label">Workspace</p>
+        <a class="nav-item" href="#home" data-route="home"><span aria-hidden="true">⌂</span>Work Packages</a>
+        <a class="nav-item" href="#sites" data-route="sites"><span aria-hidden="true">▤</span>Sites</a>
+        <a class="nav-item" href="#import" data-route="import"><span aria-hidden="true">⇥</span>Import</a>
+        <div class="nav-spacer"></div>
+        <p class="nav-label">Application</p>
+        <a class="nav-item" href="#settings" data-route="settings"><span aria-hidden="true">⚙</span>Settings</a>
+      </nav>
+      <footer class="sidebar-footer">
+        <p id="connection-status" class="connection-status" role="status">Online</p>
+        <div class="sidebar-tools">
+          <button id="theme-toggle" class="button-ghost" type="button">Theme: system</button>
+          <button id="logout" class="button-ghost" type="button">Sign out</button>
+        </div>
+        <p id="user-summary" class="user-summary"></p>
+      </footer>
+    </aside>
+    <button id="nav-scrim" class="nav-scrim" type="button" aria-label="Close navigation"></button>
+    <div class="main-shell">
+      <div class="mobile-toolbar">
+        <button id="nav-expand" class="icon-button" type="button" aria-label="Show navigation">☰</button>
+        <a href="#home">TechSiteManager</a>
+        <span id="mobile-status" class="mobile-status"></span>
+      </div>
+      <main id="app" class="content" aria-live="polite"><p class="loading">Loading…</p></main>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/js/idb.js"></script>
   <script src="/js/offline.js"></script>
   <script type="module" src="/js/main.js"></script>

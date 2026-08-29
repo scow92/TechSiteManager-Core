@@ -1,4 +1,4 @@
-export interface User { readonly id: number; readonly role: 'admin' | 'manager' | 'engineer' | 'viewer'; }
+export interface User { readonly publicId: string; readonly username: string; readonly displayName: string; readonly email: string | null; readonly role: 'admin' | 'manager' | 'engineer' | 'viewer'; readonly active: boolean; readonly version: number; }
 export interface AuthStatus { readonly user: User | null; readonly setupNeeded: boolean; }
 export interface Site { readonly publicId: string; readonly code: string; readonly name: string; readonly description: string; }
 export interface ExporterDescriptor { readonly id: string; readonly label: string; }

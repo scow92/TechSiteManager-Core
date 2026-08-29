@@ -31,14 +31,26 @@ export function notify(message) {
   setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
+/** @param {string} title @param {string} [description] @param {...Node} actions */
+export function pageHead(title, description = '', ...actions) {
+  return el('header', { class: 'page-head' },
+    el('div', {}, el('h1', {}, title), ...(description ? [el('p', { class: 'page-subtitle' }, description)] : [])),
+    ...(actions.length ? [el('div', { class: 'page-actions' }, ...actions)] : []));
+}
+
+/** @param {string} title @param {string} description */
+export function emptyState(title, description) {
+  return el('div', { class: 'empty-state' }, el('span', { class: 'empty-icon', 'aria-hidden': 'true' }, '◇'), el('h2', {}, title), el('p', {}, description));
+}
+
 /** @param {string} label @param {string} name @param {string} [type] @param {boolean} [required] */
 export function field(label, name, type = 'text', required = false) {
-  return el('label', {}, label, el('input', { name, type, required: required ? '' : null }));
+  return el('label', { class: 'field' }, el('span', {}, label), el('input', { name, type, required: required ? '' : null }));
 }
 
 /** @param {string} label @param {string} name @param {readonly (string | { value: string, label: string })[]} options @param {string} [selected] */
 export function selectField(label, name, options, selected) {
-  return el('label', {}, label, el('select', { name }, ...options.map((option) => {
+  return el('label', { class: 'field' }, el('span', {}, label), el('select', { name }, ...options.map((option) => {
     const value = typeof option === 'string' ? option : option.value;
     const text = typeof option === 'string' ? option : option.label;
     return el('option', { value, selected: value === selected ? '' : null }, text);
@@ -47,12 +59,12 @@ export function selectField(label, name, options, selected) {
 
 /** @param {string} label @param {string} name @param {string} [value] */
 export function multilineField(label, name, value = '') {
-  return el('label', {}, label, el('textarea', { name }, value));
+  return el('label', { class: 'field' }, el('span', {}, label), el('textarea', { name }, value));
 }
 
 /** @template T @param {string} title @param {readonly T[]} records @param {(record: T) => string | Node} render */
 export function recordList(title, records, render) {
-  return el('section', { class: 'panel' }, el('h2', {}, title), records.length
-    ? el('ul', {}, ...records.map((record) => el('li', {}, render(record))))
-    : el('p', { class: 'muted' }, `No ${title.toLowerCase()} recorded.`));
+  return el('section', { class: 'panel record-panel' }, el('div', { class: 'section-head' }, el('h2', {}, title), el('span', { class: 'count-badge' }, records.length)), records.length
+    ? el('ul', { class: 'record-list' }, ...records.map((record) => el('li', {}, render(record))))
+    : el('p', { class: 'empty-inline' }, `No ${title.toLowerCase()} recorded.`));
 }
