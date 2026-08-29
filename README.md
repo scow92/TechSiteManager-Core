@@ -82,6 +82,8 @@ See [docs/PLUGINS.md](docs/PLUGINS.md),
 [docs/IMPORT_PROVIDER_API.md](docs/IMPORT_PROVIDER_API.md), and
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). The runtime/language policy is recorded
 in [ADR 0001](docs/adr/0001-node-javascript-typescript.md).
+The privacy-safe measurement approach is documented in
+[docs/PERFORMANCE_MEASUREMENT.md](docs/PERFORMANCE_MEASUREMENT.md).
 
 ## Licence
 
