@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { app, el, errorMessage, field, selectField, notify } from '../dom.js';
+import { app, el, emptyState, errorMessage, field, selectField, notify } from '../dom.js';
 import { offlineStatus } from '../offline-ui.js';
 
 /** @typedef {import('../../../server/types/browser-models').User} User */
@@ -26,7 +26,7 @@ export async function homeView(user, render) {
       el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(publicId)}/export?format=csv` }, 'CSV'),
       ...exporters.map((exporter) => el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(publicId)}/plugin-exports/${encodeURIComponent(exporter.id)}` }, exporter.label))
     ];
-    return el('article', { class: 'card' }, el('span', { class: 'badge' }, record.status), el('h2', {}, el('a', { href: `#package/${record.publicId}` }, record.packageReference)), el('p', {}, record.title), el('p', { class: 'muted' }, `${record.siteCode} — ${record.siteName}`), el('p', { class: 'muted' }, record.externalReference || record.projectReference || 'No external reference'), el('div', { class: 'actions' }, links));
+    return el('article', { class: 'card' }, el('span', { class: 'badge', 'data-status': record.status }, record.status), el('h2', {}, el('a', { href: `#package/${record.publicId}` }, record.packageReference)), el('p', {}, record.title), el('div', { class: 'card-meta' }, el('span', {}, `${record.siteCode} — ${record.siteName}`), el('span', {}, record.externalReference || record.projectReference || 'No external reference')), el('div', { class: 'actions' }, links));
   }));
   show(packages);
   /** @type {ReturnType<typeof setTimeout> | undefined} */ let timer;
@@ -36,10 +36,11 @@ export async function homeView(user, render) {
   });
   /** @type {HTMLFormElement | null} */ let create = null;
   if (user.role !== 'viewer') {
-    create = el('form', { class: 'panel stack' }, el('h2', {}, 'Add work package'),
-      selectField('Site', 'sitePublicId', sites.map((site) => ({ value: site.publicId, label: `${site.code} — ${site.name}` }))),
-      field('Package reference', 'packageReference', 'text', true), field('Title', 'title', 'text', true),
-      field('Project reference (optional)', 'projectReference'), el('button', { type: 'submit', disabled: sites.length ? null : '' }, 'Add work package'),
+    create = el('form', { class: 'panel stack' }, el('div', { class: 'section-head' }, el('h2', {}, 'Add work package')),
+      el('div', { class: 'form-grid' }, selectField('Site', 'sitePublicId', sites.map((site) => ({ value: site.publicId, label: `${site.code} — ${site.name}` }))),
+        field('Package reference', 'packageReference', 'text', true), field('Title', 'title', 'text', true),
+        field('Project reference (optional)', 'projectReference')),
+      el('div', { class: 'form-actions' }, el('button', { type: 'submit', disabled: sites.length ? null : '' }, 'Add work package')),
       ...(!sites.length ? [el('p', { class: 'muted' }, 'Create a site before adding a work package.')] : []));
     const createForm = create;
     createForm.addEventListener('submit', async (event) => {
@@ -51,5 +52,16 @@ export async function homeView(user, render) {
       } catch (error) { notify(errorMessage(error)); }
     });
   }
-  app.replaceChildren(el('section', { class: 'stack' }, ...(synchronization ? [synchronization] : []), el('div', { class: 'toolbar' }, el('label', {}, 'Search', search)), packages.length ? list : el('div', { class: 'panel' }, el('h1', {}, 'Work Packages'), el('p', { class: 'muted' }, 'No work packages have been created yet. Generic records remain available without import plugins.')), ...(create ? [create] : [])));
+  const active = packages.filter((entry) => !['complete', 'cancelled'].includes(entry.status)).length;
+  const completed = packages.filter((entry) => entry.status === 'complete').length;
+  app.replaceChildren(el('section', { class: 'stack' },
+    ...(synchronization ? [synchronization] : []),
+    el('div', { class: 'hero' }, el('p', { class: 'eyebrow' }, 'Planning workspace'), el('h1', {}, 'Work Packages'), el('p', {}, 'Plan, track and review structured-cabling work across every site.')),
+    el('div', { class: 'summary-grid' },
+      el('div', { class: 'summary-card' }, el('strong', {}, packages.length), el('span', {}, 'Total packages')),
+      el('div', { class: 'summary-card' }, el('strong', {}, active), el('span', {}, 'In progress')),
+      el('div', { class: 'summary-card' }, el('strong', {}, completed), el('span', {}, 'Complete'))),
+    el('div', { class: 'panel toolbar' }, el('label', {}, 'Search all records', search)),
+    packages.length ? list : emptyState('No work packages have been created yet', 'Generic records remain available without import plugins. Create a site and then add the first work package.'),
+    ...(create ? [create] : [])));
 }

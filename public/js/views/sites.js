@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { app, el, errorMessage, field, notify } from '../dom.js';
+import { app, el, emptyState, errorMessage, field, notify, pageHead } from '../dom.js';
 
 /** @typedef {import('../../../server/types/browser-models').User} User */
 /** @typedef {import('../../../server/types/browser-models').Site} Site */
@@ -8,7 +8,9 @@ import { app, el, errorMessage, field, notify } from '../dom.js';
 /** @param {User} user */
 export async function sitesView(user) {
   const sites = /** @type {Site[]} */ (await api('/sites'));
-  const form = el('form', { class: 'panel stack' }, el('h2', {}, 'Add site'), field('Code', 'code', 'text', true), field('Name', 'name', 'text', true), field('Description', 'description'), el('button', { type: 'submit' }, 'Add site'));
+  const form = el('form', { class: 'panel stack' }, el('div', { class: 'section-head' }, el('h2', {}, 'Add site')),
+    el('div', { class: 'form-grid' }, field('Code', 'code', 'text', true), field('Name', 'name', 'text', true), field('Description', 'description')),
+    el('div', { class: 'form-actions' }, el('button', { type: 'submit' }, 'Add site')));
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
@@ -18,9 +20,10 @@ export async function sitesView(user) {
       await sitesView(user);
     } catch (error) { notify(errorMessage(error)); }
   });
-  const cards = el('div', { class: 'grid' }, ...sites.map((site) => el('article', { class: 'card' },
-    el('h2', {}, el('a', { href: `#site/${site.publicId}` }, site.code)), el('p', {}, site.name), el('p', { class: 'muted' }, site.description))));
-  app.replaceChildren(el('section', { class: 'stack' }, el('h1', {}, 'Sites'), cards,
+  const cards = el('div', { class: 'stack' }, ...sites.map((site) => el('article', { class: 'card site-card' },
+    el('div', { class: 'site-card-main' }, el('a', { class: 'site-code', href: `#site/${site.publicId}` }, site.code), el('h2', {}, site.name), el('p', { class: 'muted' }, site.description || 'No description recorded.')),
+    el('a', { class: 'button secondary', href: `#site/${site.publicId}` }, 'Open site'))));
+  app.replaceChildren(el('section', { class: 'stack' }, pageHead('Sites', 'Canonical rooms, racks, termination points and devices shared by every work package.'), sites.length ? cards : emptyState('No sites yet', 'Create the first site to begin recording infrastructure.'),
     user.role !== 'viewer' ? form : el('p', { class: 'muted' }, 'Read-only access')));
 }
 
@@ -31,8 +34,11 @@ export async function siteView(publicId) {
   if (!site) throw new Error('Site not found');
   const kinds = [['rooms', 'Rooms'], ['racks', 'Racks'], ['termination-points', 'Termination points'], ['devices', 'Devices'], ['distances', 'Distance samples']];
   const records = /** @type {SiteRecord[][]} */ (await Promise.all(kinds.map(([kind]) => api(`/sites/${encodeURIComponent(publicId)}/${kind}`))));
-  const sections = kinds.map(([, label], index) => el('section', { class: 'panel' }, el('h2', {}, label), records[index].length
-    ? el('ul', {}, ...records[index].map((record) => el('li', {}, record.name || record.label || record.hostname || `${record.endpointA} → ${record.endpointB}`)))
-    : el('p', { class: 'muted' }, `No ${label.toLowerCase()} recorded.`)));
-  app.replaceChildren(el('section', { class: 'stack' }, el('a', { href: '#sites' }, '← Sites'), el('div', { class: 'panel' }, el('h1', {}, `${site.code} — ${site.name}`), el('p', {}, site.description)), ...sections));
+  const sections = kinds.map(([, label], index) => el('section', { class: 'panel record-panel' },
+    el('div', { class: 'section-head' }, el('h2', {}, label), el('span', { class: 'count-badge' }, records[index].length)), records[index].length
+      ? el('ul', { class: 'record-list' }, ...records[index].map((record) => el('li', {}, record.name || record.label || record.hostname || `${record.endpointA} → ${record.endpointB}`)))
+      : el('p', { class: 'empty-inline' }, `No ${label.toLowerCase()} recorded.`)));
+  app.replaceChildren(el('section', { class: 'stack' }, el('p', { class: 'breadcrumb' }, el('a', { href: '#sites' }, 'Sites'), ' / ', site.code),
+    pageHead(`${site.code} — ${site.name}`, site.description || 'Canonical site infrastructure and measured distances.'),
+    el('div', { class: 'site-record-grid' }, ...sections)));
 }

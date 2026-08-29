@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { app, el, errorMessage, notify } from '../dom.js';
+import { app, el, emptyState, errorMessage, notify, pageHead } from '../dom.js';
 import { providerFields, renderDescriptorInputs } from '../import/descriptors.js';
 import { approvalFromPreview, reconciliationPreview } from '../import/reconciliation.js';
 
@@ -9,15 +9,16 @@ import { approvalFromPreview, reconciliationPreview } from '../import/reconcilia
 export async function importView() {
   const providers = /** @type {ProviderDescriptor[]} */ (await api('/import-providers'));
   if (!providers.length) {
-    app.replaceChildren(el('section', { class: 'panel' }, el('h1', {}, 'Import'),
-      el('p', {}, 'No import providers are installed.'),
-      el('p', { class: 'muted' }, 'Core records can still be created, searched, edited, exported, backed up, and restored.')));
+    app.replaceChildren(el('section', { class: 'stack' }, pageHead('Import', 'Review source data before applying it to core records.'),
+      emptyState('No import providers are installed.', 'Core records can still be created, searched, edited, exported, backed up, and restored.')));
     return;
   }
   const select = el('select', { name: 'provider' }, ...providers.map((provider) => el('option', { value: provider.id }, provider.label)));
   const dynamic = el('div', { class: 'stack' });
-  const preview = el('div');
-  const form = el('form', { class: 'panel stack' }, el('h1', {}, 'Import'), el('label', {}, 'Provider', select), dynamic, el('button', { type: 'submit' }, 'Validate and preview'));
+  const preview = el('aside', { class: 'preview-panel' }, el('div', { class: 'empty-state' }, el('span', { class: 'empty-icon', 'aria-hidden': 'true' }, '⇥'), el('h2', {}, 'Preview'), el('p', {}, 'Choose a provider and validate the source to review proposed changes.')));
+  const form = el('form', { class: 'panel stack' },
+    el('div', { class: 'provider-heading' }, el('span', { class: 'provider-icon', 'aria-hidden': 'true' }, '⇥'), el('div', {}, el('h2', {}, 'Import provider'), el('p', { class: 'muted' }, 'Source interpretation runs on the server.'))),
+    el('label', {}, 'Provider', select), dynamic, el('div', { class: 'form-actions' }, el('button', { type: 'submit' }, 'Validate and preview')));
   /** @returns {ProviderDescriptor} */
   function selectedProvider() {
     const provider = providers.find((entry) => entry.id === select.value);
@@ -29,7 +30,7 @@ export async function importView() {
   renderInput();
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    preview.replaceChildren(el('p', { class: 'loading' }, 'Validating…'));
+    preview.replaceChildren(el('div', { class: 'panel' }, el('p', { class: 'loading' }, 'Validating…')));
     try {
       const provider = selectedProvider();
       const data = new FormData(form);
@@ -54,8 +55,8 @@ export async function importView() {
           preview.replaceChildren(el('div', { class: 'panel' }, el('h2', {}, 'Import applied'), el('pre', {}, JSON.stringify(result, null, 2))));
         } catch (error) { notify(errorMessage(error)); }
       });
-      preview.replaceChildren(el('div', { class: 'panel stack' }, el('h2', {}, 'Normalized preview'), reconciliation, apply));
-    } catch (error) { preview.replaceChildren(el('p', { class: 'error' }, errorMessage(error))); }
+      preview.replaceChildren(el('div', { class: 'panel stack' }, el('div', { class: 'section-head' }, el('h2', {}, 'Normalized preview')), reconciliation, apply));
+    } catch (error) { preview.replaceChildren(el('div', { class: 'panel' }, el('p', { class: 'error' }, errorMessage(error)))); }
   });
-  app.replaceChildren(el('section', { class: 'stack' }, form, preview));
+  app.replaceChildren(el('section', { class: 'stack' }, pageHead('Import', 'Select an installed provider, validate the source, review reconciliation and approve atomically.'), el('div', { class: 'import-provider-grid' }, form, preview)));
 }
