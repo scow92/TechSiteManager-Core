@@ -80,7 +80,8 @@ through core-owned authenticated routes.
 
 See [docs/PLUGINS.md](docs/PLUGINS.md),
 [docs/IMPORT_PROVIDER_API.md](docs/IMPORT_PROVIDER_API.md), and
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). The runtime/language policy is recorded
+in [ADR 0001](docs/adr/0001-node-javascript-typescript.md).
 
 ## Licence
 
