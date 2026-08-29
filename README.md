@@ -12,8 +12,13 @@ backup/restore are core capabilities.
 
 ## Status
 
-This repository is a private public-release candidate. It must not be made
-public until the remaining review and publication approvals are complete.
+This source repository is public. Version `1.0.0-rc.1` remains a release
+candidate and Plugin API V1 remains the supported plugin contract.
+
+GitHub recorded public visibility on 2026-08-29 at 08:40:53 UTC, while `main`
+pointed at commit `5d98b43f349c8329df71b0c1a603782b0c4ff368`. Making the
+source repository public did not publish an npm package, public container
+image, GitHub release, Pages site, or hosted TechSiteManager deployment.
 
 ## Run locally
 
@@ -81,3 +86,8 @@ Original TechSiteManager code is licensed under the Apache License, Version
 2.0 (`Apache-2.0`). See [LICENSE](LICENSE) and [COPYRIGHT.md](COPYRIGHT.md).
 Third-party components remain under their respective licences; see
 [docs/THIRD_PARTY_LICENSES.md](docs/THIRD_PARTY_LICENSES.md).
+
+The copyright owner confirmed ownership of the original code and selected
+`Apache-2.0` as the outbound licence. The publication event is not evidence of
+technical, security, disclosure, organizational, or release approval that has
+not otherwise been recorded.

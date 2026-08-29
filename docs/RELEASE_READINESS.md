@@ -5,6 +5,10 @@ and any organization-specific findings must remain outside this repository.
 
 ## Candidate identity
 
+- Public source repository: `scow92/TechSiteManager-Core`
+- Public-visibility timestamp: 2026-08-29 08:40:53 UTC
+- Commit at public visibility:
+  `5d98b43f349c8329df71b0c1a603782b0c4ff368`
 - Evidence-bearing source commit:
   `96f9c62d17eb7a82f09f816c83933700e69fdc3a`
 - Core version: `1.0.0-rc.1`
@@ -119,16 +123,16 @@ candidate and passed when temporary writable caches were configured.
 - Reviewers must independently confirm the technical, security,
   copyright/IP, third-party licensing, and disclosure conclusions.
 
-## Outstanding blockers
+## Formal approvals not recorded
 
 - Human technical review is not recorded.
 - Human security review is not recorded.
 - Human copyright/IP review is not recorded.
 - Human third-party licensing review is not recorded.
 - Human disclosure review is not recorded.
-- Publication approval and approval to change repository visibility are not
-  recorded. Private pull-request merge and private candidate rename approval
-  are recorded in `docs/PUBLICATION_APPROVAL_CHECKLIST.md`.
+- Formal source-publication approval and approval for the repository visibility
+  change are not recorded. The completed visibility event is documented
+  separately from approval in `docs/PUBLICATION_APPROVAL_CHECKLIST.md`.
 - If organization policy requires any unavailable scanner, its external result
   remains a blocker.
 
@@ -136,10 +140,12 @@ Sam Cowie has confirmed ownership of the candidate's original code, selected
 `Apache-2.0` as its outbound licence, and approved the private pull-request
 merge and private candidate rename. Those decisions are recorded in
 `docs/PUBLICATION_APPROVAL_CHECKLIST.md`; they do not constitute technical,
-security, disclosure, final publication, or public-visibility approval. Both
-repositories remained private throughout this review, and the original private
+security, disclosure, final publication, or public-visibility approval. The
+candidate remained private throughout that review and later became the public
+`scow92/TechSiteManager-Core` source repository. The original private
 repository was not modified.
 
-Do not change repository visibility, publish packages or images, create a
-release, rename the original private repository, or reuse its name without
-explicit later approval.
+Public source visibility did not publish an npm package, public container
+image, GitHub release, Pages site, or hosted deployment. Do not perform any of
+those publication actions, or rename the original private repository, without
+explicit approval.

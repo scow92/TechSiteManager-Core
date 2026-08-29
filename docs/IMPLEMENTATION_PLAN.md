@@ -7,7 +7,8 @@ or private repository details.
 ## Repository construction and disclosure
 
 - [x] Start from a new root commit with no inherited Git ancestry.
-- [x] Keep the candidate and its remote private during implementation.
+- [x] Keep the candidate and its remote private during the original
+  implementation and evidence review.
 - [x] Define and enforce the candidate source allowlist.
 - [x] Use one generic fresh-install migration rather than historical
   migrations.
@@ -66,7 +67,11 @@ or private repository details.
 - [x] Add focused tests for every item completed above.
 - [x] Run the complete acceptance matrix and record passed, failed, and skipped
   checks in `docs/RELEASE_READINESS.md`.
-- [x] Push reviewable checkpoints to the private candidate branch.
+- [x] Push reviewable checkpoints to the candidate branch while it was
+  private.
 - [x] Record the owner-selected `Apache-2.0` outbound licence.
-- [ ] Stop before publication until explicit human publication approval
-  exists.
+- [x] Record that the source repository became public at commit
+  `5d98b43f349c8329df71b0c1a603782b0c4ff368` on 2026-08-29 at 08:40:53 UTC.
+- [ ] Record formal technical, security, disclosure, organizational, and
+  publication approvals if they are later completed; public visibility alone
+  does not establish them.
