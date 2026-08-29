@@ -21,6 +21,9 @@
   "include": [
     "server/config.js",
     "server/imports/contracts.js",
+    "server/imports/artifacts.js",
+    "server/imports/draft-storage.js",
+    "server/imports/fingerprints.js",
     "server/imports/reconcile.js",
     "server/imports/service.js",
     "server/lib/concurrency.js",

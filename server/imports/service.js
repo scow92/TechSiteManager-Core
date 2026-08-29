@@ -8,14 +8,13 @@ const { buildProposal, flatten, FIELD_COLUMNS } = require('./reconcile');
 const { boundedJson, knownKeys, string, integer, array, object } = require('../lib/validation');
 const { httpError } = require('../lib/errors');
 const audit = require('../lib/audit');
+const { acquireArtifact, callProvider } = require('./artifacts');
+const { sha256, canonicalHash, sourceFingerprint } = require('./fingerprints');
+const draftStorage = require('./draft-storage');
 
 const TABLES = Object.freeze({ work_package: 'work_packages', work_item: 'work_items', circuit: 'circuits', segment: 'segments' });
 
 /** @typedef {import('techsitemanager/plugin-api').PluginRegistry} PluginRegistry */
-/** @typedef {import('techsitemanager/plugin-api').LoadedImportProvider} LoadedImportProvider */
-/** @typedef {import('techsitemanager/plugin-api').LoadedSourceConnector} LoadedSourceConnector */
-/** @typedef {import('techsitemanager/plugin-api').ImportProfile} ImportProfile */
-/** @typedef {import('techsitemanager/import-contracts').SourceArtifact} SourceArtifact */
 /** @typedef {import('techsitemanager/import-contracts').ValidatedImportDraft} ValidatedImportDraft */
 /** @typedef {import('techsitemanager/import-contracts').ReconciliationEntityType} EntityType */
 /** @typedef {import('techsitemanager/import-contracts').ReconciliationEntityProposal} EntityProposal */
@@ -84,151 +83,8 @@ function parseVersions(json) {
 }
 
 function uuid() { return crypto.randomUUID(); }
-/** @param {crypto.BinaryLike} value @returns {`sha256:${string}`} */
-function sha256(value) { return `sha256:${crypto.createHash('sha256').update(value).digest('hex')}`; }
-/** @param {object} value @returns {`sha256:${string}`} */
-function canonicalHash(value) { return sha256(Buffer.from(JSON.stringify(value))); }
 /** @returns {string} */
 function now() { return new Date().toISOString(); }
-
-/** @param {unknown} value @param {string} path @param {number} [max] @returns {string} */
-function requiredText(value, path, max = 255) {
-  const result = string(value, path, { required: true, max });
-  if (result === null) throw httpError(422, 'required_field', `${path} is required`, path);
-  return result;
-}
-
-/**
- * @param {LoadedImportProvider} provider
- * @param {unknown} value
- * @returns {Readonly<Record<string, string | number | boolean>>}
- */
-function inputFields(provider, value) {
-  const supplied = object(value || {}, 'body.fields');
-  const descriptors = new Map((provider.input.fields || []).map((field) => [field.id, field]));
-  if (Object.keys(supplied).length > 20) throw httpError(422, 'too_many_input_fields', 'Too many input fields');
-  /** @type {Record<string, string | number | boolean>} */
-  const result = {};
-  for (const key of Object.keys(supplied)) if (!descriptors.has(key)) throw httpError(422, 'unknown_input_field', 'Unknown provider input field', `body.fields.${key}`);
-  for (const descriptor of descriptors.values()) {
-    const valueAtField = supplied[descriptor.id];
-    if ((valueAtField === undefined || valueAtField === null || valueAtField === '') && descriptor.required) throw httpError(422, 'required_field', `body.fields.${descriptor.id} is required`, `body.fields.${descriptor.id}`);
-    if (valueAtField === undefined || valueAtField === null || valueAtField === '') continue;
-    if (['string', 'multiline', 'core-entity-selector'].includes(descriptor.type)) result[descriptor.id] = requiredText(valueAtField, `body.fields.${descriptor.id}`, descriptor.maxLength || (descriptor.type === 'multiline' ? 20_000 : 255));
-    else if (descriptor.type === 'integer') {
-      const parsed = integer(valueAtField, `body.fields.${descriptor.id}`, { required: true });
-      if (parsed === null) throw httpError(422, 'required_field', `body.fields.${descriptor.id} is required`, `body.fields.${descriptor.id}`);
-      result[descriptor.id] = parsed;
-    }
-    else if (descriptor.type === 'boolean') {
-      if (typeof valueAtField !== 'boolean') throw httpError(422, 'invalid_field', `body.fields.${descriptor.id} is invalid`, `body.fields.${descriptor.id}`);
-      result[descriptor.id] = valueAtField;
-    } else {
-      if (typeof valueAtField !== 'string' || !descriptor.options || !descriptor.options.includes(valueAtField)) throw httpError(422, 'invalid_field', `body.fields.${descriptor.id} is invalid`, `body.fields.${descriptor.id}`);
-      result[descriptor.id] = valueAtField;
-    }
-  }
-  return Object.freeze(result);
-}
-
-/** @param {LoadedImportProvider} provider @param {unknown} body @returns {Readonly<SourceArtifact>} */
-function frozenArtifact(provider, body) {
-  const input = object(body, 'body');
-  knownKeys(input, ['content', 'contentEncoding', 'mediaType', 'externalReference', 'fields'], 'body');
-  const mediaType = requiredText(input.mediaType, 'body.mediaType', 128);
-  if (input.contentEncoding !== undefined && input.contentEncoding !== 'utf8' && input.contentEncoding !== 'base64') throw httpError(422, 'invalid_content_encoding', 'Unsupported content encoding');
-  const encoding = input.contentEncoding === 'base64' ? 'base64' : 'utf8';
-  const contentString = requiredText(input.content, 'body.content', Math.ceil(provider.input.maxBytes * 4 / 3) + 16);
-  const content = Buffer.from(contentString, encoding);
-  if (!content.length || content.length > provider.input.maxBytes) throw httpError(413, 'source_artifact_too_large', 'Source artifact is too large');
-  if (provider.input.type === 'file' && !provider.input.mediaTypes.includes(mediaType)) throw httpError(415, 'source_media_type_unsupported', 'Source media type is not supported');
-  if (provider.input.type === 'pasted-text' && !['text/plain', 'text/html'].includes(mediaType)) throw httpError(415, 'source_media_type_unsupported', 'Source media type is not supported');
-  const externalReference = string(input.externalReference, 'body.externalReference', { max: 255 });
-  const fields = inputFields(provider, input.fields);
-  return Object.freeze({
-    schemaVersion: 'techsitemanager.io/source-artifact/v1', providerId: provider.id,
-    connectorId: provider.input.type === 'file' ? 'core.file' : 'core.paste',
-    contentHash: sha256(content), mediaType, receivedAt: now(), externalReference,
-    fields, content
-  });
-}
-
-/** @param {ImportProfile | null} profile @param {PluginRegistry} registry @param {AbortController} controller @returns {import('techsitemanager/plugin-api').ProviderContext} */
-function context(profile, registry, controller) {
-  /** @type {Record<string, import('techsitemanager/plugin-api').NamedTransform>} */
-  const transforms = {};
-  for (const id of profile && profile.transforms || []) {
-    const transform = registry.transform(id);
-    if (transform) transforms[id] = transform;
-  }
-  const logger = Object.freeze({
-    info(/** @type {import('techsitemanager/plugin-api').PluginLogEvent} */ event) { console.log(JSON.stringify({ type: 'plugin_event', level: 'info', code: String(event && event.code || 'event').slice(0, 128) })); },
-    warn(/** @type {import('techsitemanager/plugin-api').PluginLogEvent} */ event) { console.warn(JSON.stringify({ type: 'plugin_event', level: 'warn', code: String(event && event.code || 'event').slice(0, 128) })); }
-  });
-  return Object.freeze({ abortSignal: controller.signal, now, logger, profile, transforms: Object.freeze(transforms) });
-}
-
-/** @param {unknown} error @returns {number | null} */
-function errorStatus(error) {
-  return error && typeof error === 'object' && 'status' in error && typeof error.status === 'number' ? error.status : null;
-}
-
-/** @param {unknown} error @returns {string | null} */
-function stableErrorCode(error) {
-  return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : null;
-}
-
-/**
- * @param {LoadedImportProvider} provider
- * @param {SourceArtifact} artifact
- * @param {ImportProfile | null} profile
- * @param {PluginRegistry} registry
- * @returns {Promise<unknown>}
- */
-async function callProvider(provider, artifact, profile, registry) {
-  const controller = new AbortController();
-  /** @type {NodeJS.Timeout | undefined} */
-  let timer;
-  try {
-    return await Promise.race([
-      Promise.resolve().then(() => provider.transform(artifact, context(profile, registry, controller))),
-      new Promise((/** @type {(value: never) => void} */ _, reject) => {
-        timer = setTimeout(() => {
-          controller.abort();
-          reject(httpError(504, 'provider_timeout', 'Import provider timed out'));
-        }, config.pluginTimeoutMs);
-      })
-    ]);
-  } catch (error) {
-    if (errorStatus(error)) throw error;
-    throw httpError(422, stableErrorCode(error) === 'source_unrecognized' ? 'source_unrecognized' : 'provider_rejected_source', 'The import provider could not process the source');
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** @param {LoadedSourceConnector} connector @param {import('techsitemanager/plugin-api').ExternalSourceReference} reference @returns {Promise<unknown>} */
-async function callConnector(connector, reference) {
-  const controller = new AbortController();
-  /** @type {NodeJS.Timeout | undefined} */
-  let timer;
-  try {
-    return await Promise.race([
-      Promise.resolve().then(() => connector.acquire(reference, Object.freeze({ abortSignal: controller.signal, now }))),
-      new Promise((/** @type {(value: never) => void} */ _, reject) => {
-        timer = setTimeout(() => {
-          controller.abort();
-          reject(httpError(504, 'connector_timeout', 'Source connector timed out'));
-        }, config.pluginTimeoutMs);
-      })
-    ]);
-  } catch (error) {
-    if (errorStatus(error)) throw error;
-    throw httpError(502, 'connector_acquisition_failed', 'The external source could not be acquired');
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 /**
  * @param {PluginRegistry} registry
@@ -240,21 +96,10 @@ async function callConnector(connector, reference) {
 async function stage(registry, providerId, actorUserId, body) {
   const provider = registry.provider(providerId);
   if (!provider) throw httpError(404, 'provider_not_found', 'Import provider not found');
-  let artifact;
-  if (provider.input.type === 'external-reference') {
-    const input = object(body, 'body');
-    knownKeys(input, ['externalReference', 'fields'], 'body');
-    const connector = provider.connectorId && registry.connector(provider.connectorId);
-    if (!connector) throw httpError(503, 'connector_not_available', 'This provider requires an unavailable source connector');
-    const reference = Object.freeze({ externalReference: requiredText(input.externalReference, 'body.externalReference', 255), fields: inputFields(provider, input.fields) });
-    const acquired = await callConnector(connector, reference);
-    if (!acquired || typeof acquired !== 'object' || !('content' in acquired) || !Buffer.isBuffer(acquired.content) || acquired.content.length > provider.input.maxBytes || !('mediaType' in acquired)) throw httpError(502, 'connector_artifact_invalid', 'The external source returned an invalid artifact');
-    artifact = Object.freeze({ schemaVersion: /** @type {const} */ ('techsitemanager.io/source-artifact/v1'), providerId: provider.id, connectorId: connector.id, contentHash: sha256(acquired.content), mediaType: requiredText(acquired.mediaType, 'artifact.mediaType', 128), receivedAt: now(), externalReference: reference.externalReference, fields: reference.fields, content: acquired.content });
-  } else artifact = frozenArtifact(provider, body);
+  let artifact = await acquireArtifact(registry, provider, body);
   const profile = provider.profileId ? registry.profile(provider.profileId) || null : null;
   const providerDraft = await callProvider(provider, artifact, profile, registry);
   let draft = validateDraft(providerDraft, provider.id, provider.providerVersion, artifact, profile);
-  artifact = null;
   const draftId = uuid();
   const createdAt = now();
   const expiresAt = new Date(Date.now() + config.draftTtlMs).toISOString();
@@ -281,7 +126,7 @@ async function stage(registry, providerId, actorUserId, body) {
 
 /** @param {string} draftId @param {number} actorUserId @returns {Promise<ReconciliationProposal>} */
 async function getDraft(draftId, actorUserId) {
-  const row = /** @type {DraftRow | undefined} */ (await db('import_drafts').where({ id: draftId, actor_user_id: actorUserId }).first());
+  const row = await draftStorage.findOwned(draftId, actorUserId);
   if (!row) throw httpError(404, 'draft_not_found', 'Import draft not found');
   if (row.expires_at <= now()) throw httpError(410, 'draft_expired', 'Import draft has expired');
   const proposal = parseProposal(row.proposal_json);
@@ -290,7 +135,7 @@ async function getDraft(draftId, actorUserId) {
 
 /** @param {string} draftId @param {number} actorUserId @returns {Promise<void>} */
 async function cancelDraft(draftId, actorUserId) {
-  const deleted = await db('import_drafts').where({ id: draftId, actor_user_id: actorUserId, applied_run_id: null }).delete();
+  const deleted = await draftStorage.cancelOwned(draftId, actorUserId);
   if (!deleted) throw httpError(404, 'draft_not_found', 'Import draft not found');
 }
 
@@ -456,14 +301,14 @@ async function apply(registry, draftId, actorUserId, input) {
       return resultFromRun(prior);
     }
     await assertVersions(trx, expectedVersions);
-    const sourceFingerprint = sha256(Buffer.from([draft.providerId, draft.source.externalSourceId, draft.source.sourceVersion === null ? '<null>' : draft.source.sourceVersion, draft.source.contentHash].join('\u0000')));
+    const fingerprint = sourceFingerprint(draft);
     let source = /** @type {SourceRow | undefined} */ (await trx('import_sources').where({ provider_id: draft.providerId, external_source_id: draft.source.externalSourceId }).first());
     if (!source) {
       const [sourceId] = await trx('import_sources').insert({ public_id: uuid(), provider_id: draft.providerId, external_source_id: draft.source.externalSourceId, display_reference: draft.source.externalSourceId, connector_id: draft.source.connectorId, first_seen_at: now(), last_seen_at: now() });
       source = /** @type {SourceRow | undefined} */ (await trx('import_sources').where({ id: sourceId }).first());
       if (!source) throw httpError(500, 'import_persistence_failed', 'Import source could not be read after creation');
     }
-    const priorRun = /** @type {ImportRunRow | undefined} */ (await trx('import_runs').where({ source_id: source.id, source_fingerprint: sourceFingerprint, status: 'applied' }).first());
+    const priorRun = /** @type {ImportRunRow | undefined} */ (await trx('import_runs').where({ source_id: source.id, source_fingerprint: fingerprint, status: 'applied' }).first());
     if (priorRun) {
       await trx('import_runs').where({ id: priorRun.id }).increment('attempt_count', 1);
       await trx('import_drafts').where({ id: draftId }).update({ applied_run_id: priorRun.id });
@@ -471,7 +316,7 @@ async function apply(registry, draftId, actorUserId, input) {
     }
     const [runId] = await trx('import_runs').insert({
       public_id: uuid(), source_id: source.id, source_version: draft.source.sourceVersion,
-      content_hash: draft.source.contentHash, source_fingerprint: sourceFingerprint,
+      content_hash: draft.source.contentHash, source_fingerprint: fingerprint,
       provider_version: draft.providerVersion, profile_id: draft.profileId, profile_hash: draft.profileHash,
       status: 'applying', actor_user_id: actorUserId, counts_json: '{}', warning_codes_json: JSON.stringify(draft.warnings.map((warning) => warning.code)),
       decisions_json: JSON.stringify({ fields: Object.keys(approval.fieldDecisions || {}).length, absences: Object.keys(approval.absenceDecisions || {}).length }), started_at: now()
@@ -563,7 +408,7 @@ async function getRun(publicId) {
 
 /** @returns {Promise<number>} */
 async function expireDrafts() {
-  return db('import_drafts').where('expires_at', '<=', now()).whereNull('applied_run_id').delete();
+  return draftStorage.expireBefore(now());
 }
 
 module.exports = { stage, getDraft, cancelDraft, apply, getRun, expireDrafts, sha256, canonicalHash };
