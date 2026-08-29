@@ -10,6 +10,12 @@ The application is useful with no plugins. Search, editing, generic JSON/CSV
 export, authentication, optimistic concurrency, offline shell support, and
 backup/restore are core capabilities.
 
+The browser provides a compact responsive planning shell with dark and light
+themes, desktop and mobile navigation, consistent record cards and forms, and
+visible loading, empty, error, and synchronization states. Shared presentation
+is documented in [docs/VISUAL_PARITY.md](docs/VISUAL_PARITY.md); private source
+terminology and interpretation remain plugin-owned.
+
 ## Status
 
 This source repository is public. Version `1.0.0-rc.1` remains a release
@@ -49,6 +55,7 @@ npm run syntax
 npm run typecheck
 npm test
 npm run test:e2e
+npm run test:visual
 npm run scan:public
 ```
 
