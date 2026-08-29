@@ -29,7 +29,7 @@ function httpError(status, code, message, path) {
 }
 
 /**
- * @typedef {{ error: string, code: string, requestId: string, path?: string }} PublicErrorBody
+ * @typedef {{ error: string, code: string, requestId: string, path?: string, serverVersion?: number }} PublicErrorBody
  */
 
 /**

@@ -15,6 +15,7 @@ const CSP = [
   "base-uri 'none'", "frame-ancestors 'none'", "form-action 'self'"
 ].join('; ');
 
+/** @param {import('techsitemanager/plugin-api').PluginRegistry} registry @returns {express.Express} */
 module.exports = function createApp(registry) {
   const app = express();
   app.set('trust proxy', config.proxyMode === 'single' ? 1 : false);
@@ -53,6 +54,7 @@ module.exports = function createApp(registry) {
   app.use('/api', require('./routes/imports')(registry));
   app.use('/api', require('./routes/core'));
 
+  /** @param {import('express').Response} res */
   const noCache = (res) => res.setHeader('Cache-Control', 'no-cache');
   for (const dir of ['css', 'js']) app.use(`/${dir}`, express.static(path.join(PUBLIC_ROOT, dir), { setHeaders: noCache }));
   app.get('/manifest.json', (_req, res) => res.sendFile(path.join(PUBLIC_ROOT, 'manifest.json')));
@@ -61,15 +63,18 @@ module.exports = function createApp(registry) {
   app.get(['/', '/index.html'], (_req, res) => { noCache(res); res.type('html').send(index); });
 
   app.use((_req, _res, next) => next(httpError(404, 'not_found', 'Not found')));
-  app.use((err, req, res, _next) => {
+  /** @type {import('express').ErrorRequestHandler} */
+  const errorHandler = (err, req, res, _next) => {
     let error = err;
     if (err && err.type === 'entity.parse.failed') error = httpError(400, 'invalid_json', 'Request body must contain valid JSON');
     if (err && err.type === 'entity.too.large') error = httpError(413, 'request_too_large', 'Request is too large');
     if (err && String(err.code || '').startsWith('SQLITE_CONSTRAINT')) error = httpError(409, 'constraint_conflict', 'The request conflicts with an existing record or relationship');
     const mapped = errorBody(error, req.id);
-    if (error.serverVersion !== undefined) mapped.body.serverVersion = error.serverVersion;
-    if (mapped.status >= 500) console.error(JSON.stringify({ type: 'request_error', requestId: req.id, code: error.code || 'internal_error' }));
+    if (error && typeof error === 'object' && 'serverVersion' in error && error.serverVersion !== undefined) mapped.body.serverVersion = Number(error.serverVersion);
+    const errorCode = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : 'internal_error';
+    if (mapped.status >= 500) console.error(JSON.stringify({ type: 'request_error', requestId: req.id, code: errorCode }));
     res.status(mapped.status).json(mapped.body);
-  });
+  };
+  app.use(errorHandler);
   return app;
 };

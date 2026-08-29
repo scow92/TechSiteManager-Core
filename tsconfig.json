@@ -19,6 +19,8 @@
     "types": ["node"]
   },
   "include": [
+    "server/types/express.d.ts",
+    "server/app.js",
     "server/config.js",
     "server/imports/contracts.js",
     "server/imports/artifacts.js",
@@ -26,6 +28,7 @@
     "server/imports/fingerprints.js",
     "server/imports/reconcile.js",
     "server/imports/service.js",
+    "server/lib/auth.js",
     "server/lib/concurrency.js",
     "server/lib/errors.js",
     "server/lib/validation.js",
@@ -37,6 +40,7 @@
     "server/plugins/manifest-validator.js",
     "server/plugins/package-resolver.js",
     "server/plugins/profiles.js",
-    "server/plugins/registry.js"
+    "server/plugins/registry.js",
+    "server/routes/imports.js"
   ]
 }
