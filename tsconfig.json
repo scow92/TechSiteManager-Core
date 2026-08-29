@@ -8,6 +8,11 @@
     "module": "Node16",
     "moduleResolution": "Node16",
     "noEmit": true,
+    "paths": {
+      "techsitemanager": ["./types/index.d.ts"],
+      "techsitemanager/import-contracts": ["./types/import-contracts.d.ts"],
+      "techsitemanager/plugin-api": ["./types/plugin-api.d.ts"]
+    },
     "strict": true,
     "target": "ES2024",
     "types": ["node"]

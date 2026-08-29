@@ -32,3 +32,22 @@ The fictional package under `examples/fictional-plugin/` demonstrates the
 contract without representing a real source system. It is original project
 example code licensed under `Apache-2.0`; dependencies loaded by a real plugin
 retain their own licences and attribution requirements.
+
+## Type contract kit
+
+Plugin API V1 declarations are published in `types/plugin-api.d.ts` and the
+normalized import/reconciliation declarations are in
+`types/import-contracts.d.ts`. The root package remains `private: true`; these
+paths document and check the source contract without publishing an npm package
+or changing CommonJS loading.
+
+A private plugin repository can pin a public TechSiteManager-Core tag or exact
+commit as a development-only dependency and import types from
+`techsitemanager/plugin-api` and `techsitemanager/import-contracts`. It may
+instead copy the tagged `types/` directory together with `LICENSE`, recording
+the source tag or commit and content hash. Do not copy from an untagged branch,
+and do not copy deployment-specific or private material into the contract kit.
+
+Type declarations help trusted plugin authors before execution. AJV, strict
+YAML validation, manual guards, bounds, durable-ID checks, version checks, and
+registry conflict checks remain authoritative for loaded or external data.

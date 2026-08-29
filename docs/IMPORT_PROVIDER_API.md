@@ -41,3 +41,9 @@ Approval accepts decisions only for fields and absences present in that exact
 proposal. Unknown decisions, malformed maps, unknown warning
 acknowledgements, a changed draft hash, or changed target versions are rejected
 before persistence.
+
+Public TypeScript declarations for these shapes are available at
+`types/import-contracts.d.ts`. They describe valid provider output and core
+responses but do not make JSON, YAML, connector output, or callback returns
+trusted. Core validates every runtime value again before reconciliation or
+persistence.

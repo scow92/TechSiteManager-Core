@@ -5,11 +5,20 @@
   "license": "Apache-2.0",
   "description": "Generic planning and record management for structured-cabling work",
   "main": "server/server.js",
+  "types": "types/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "plugin-api": ["types/plugin-api.d.ts"],
+      "import-contracts": ["types/import-contracts.d.ts"],
+      "*": ["types/index.d.ts"]
+    }
+  },
   "files": [
     "server",
     "public",
     "config",
     "examples/fictional-plugin",
+    "types/*.d.ts",
     "docs",
     "README.md",
     "AGENTS.md",
@@ -28,7 +37,7 @@
     "migrate": "node server/scripts/migrate.js",
     "lint": "eslint .",
     "syntax": "find public server examples -type f \\( -name '*.js' -o -name '*.cjs' \\) -print0 | xargs -0 -n1 node --check",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.contracts.json",
     "test": "node --test server/test/*.test.js",
     "test:e2e": "node server/test/e2e.playwright.js",
     "test:recovery": "node --test server/test/recovery.test.js",

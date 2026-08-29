@@ -1,5 +1,6 @@
 'use strict';
 
+/** @type {import('techsitemanager/plugin-api').Exporter['export']} */
 module.exports = async function exportSummary(workPackage) {
   const summary = {
     schemaVersion: 'example.test/facility-summary/v1',
