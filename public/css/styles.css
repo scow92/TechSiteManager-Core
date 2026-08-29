@@ -175,6 +175,14 @@ td { padding: 10px 11px; border-top: 1px solid var(--border); vertical-align: to
 .site-card-main { min-width: 0; }
 .site-code { color: var(--accent); font: 650 12px var(--mono); }
 .site-record-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 16px; }
+.room-grid, .rack-preview-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.room-card, .rack-preview { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.room-card h3, .room-card p { margin: 0 0 8px; }
+.rack-preview-head { align-items: center; display: flex; justify-content: space-between; margin-bottom: 12px; }
+.rack-face { background: repeating-linear-gradient(to bottom, transparent 0, transparent 7px, var(--border) 8px); border: 4px solid var(--border-2); border-radius: 4px; display: grid; gap: 2px; grid-template-rows: repeat(var(--rack-units), 8px); min-height: 168px; overflow: hidden; padding: 3px; position: relative; }
+.rack-device { align-items: center; align-self: end; background: color-mix(in srgb, var(--accent) 30%, var(--bg-2)); border: 1px solid var(--accent); border-radius: 2px; display: flex; font-size: .7rem; grid-row: calc(var(--rack-units) - var(--rack-u) - var(--device-u) + 2) / span var(--device-u); min-height: 8px; overflow: hidden; padding-inline: 8px; white-space: nowrap; }
+.rack-empty { align-self: center; color: var(--text-dim); font-size: .75rem; justify-self: center; position: absolute; }
+.rack-meta { margin: 8px 0 0; }
 .settings-list { display: grid; gap: 0; margin: 0; }
 .settings-list div { display: grid; grid-template-columns: minmax(100px, .5fr) 1fr; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .settings-list div:last-child { border-bottom: 0; }
