@@ -12,7 +12,7 @@ const { acquireArtifact, callProvider } = require('./artifacts');
 const { sha256, canonicalHash, sourceFingerprint } = require('./fingerprints');
 const draftStorage = require('./draft-storage');
 
-const TABLES = Object.freeze({ work_package: 'work_packages', work_item: 'work_items', circuit: 'circuits', segment: 'segments' });
+const TABLES = Object.freeze({ work_package: 'work_packages', work_item: 'work_items', circuit: 'circuits', segment: 'segments', consumable_requirement: 'consumable_requirements' });
 
 /** @typedef {import('techsitemanager/plugin-api').PluginRegistry} PluginRegistry */
 /** @typedef {import('techsitemanager/import-contracts').ValidatedImportDraft} ValidatedImportDraft */
@@ -44,13 +44,13 @@ function parseStoredJson(json) {
 
 /** @param {unknown} value @returns {value is ValidatedImportDraft} */
 function isValidatedDraft(value) {
-  if (!isRecord(value) || value.schemaVersion !== 'techsitemanager.io/import-draft/v1' || typeof value.providerId !== 'string' || typeof value.providerVersion !== 'string') return false;
+  if (!isRecord(value) || !['techsitemanager.io/import-draft/v1', 'techsitemanager.io/import-draft/v2'].includes(/** @type {string} */ (value.schemaVersion)) || typeof value.providerId !== 'string' || typeof value.providerVersion !== 'string') return false;
   const source = value.source;
   const target = value.target;
   const workPackage = value.workPackage;
   return isRecord(source) && typeof source.externalSourceId === 'string' && (source.sourceVersion === null || typeof source.sourceVersion === 'string') && typeof source.contentHash === 'string' && typeof source.connectorId === 'string' &&
     isRecord(target) && typeof target.siteCode === 'string' && typeof target.siteName === 'string' &&
-    isRecord(workPackage) && typeof workPackage.sourceRecordKey === 'string' && isRecord(workPackage.fields) && Array.isArray(workPackage.workItems) && Array.isArray(workPackage.connections) && Array.isArray(value.warnings);
+    isRecord(workPackage) && typeof workPackage.sourceRecordKey === 'string' && isRecord(workPackage.fields) && Array.isArray(workPackage.workItems) && Array.isArray(workPackage.connections) && Array.isArray(workPackage.consumableRequirements) && Array.isArray(value.warnings);
 }
 
 /** @param {unknown} value @returns {value is ReconciliationProposal} */
@@ -98,8 +98,10 @@ async function stage(registry, providerId, actorUserId, body) {
   if (!provider) throw httpError(404, 'provider_not_found', 'Import provider not found');
   let artifact = await acquireArtifact(registry, provider, body);
   const profile = provider.profileId ? registry.profile(provider.profileId) || null : null;
+  const candidatePresentation = typeof registry.presentationFor === 'function' ? registry.presentationFor('work-package') || null : null;
+  const presentation = candidatePresentation && candidatePresentation.pluginId === provider.pluginId ? candidatePresentation : null;
   const providerDraft = await callProvider(provider, artifact, profile, registry);
-  let draft = validateDraft(providerDraft, provider.id, provider.providerVersion, artifact, profile);
+  let draft = validateDraft(providerDraft, provider.id, provider.providerVersion, artifact, profile, presentation);
   const draftId = uuid();
   const createdAt = now();
   const expiresAt = new Date(Date.now() + config.draftTtlMs).toISOString();
@@ -232,7 +234,8 @@ function acceptedChanges(entity, approval) {
   const changes = {};
   for (const field of entity.fields) {
     const decision = decisionFor(approval, entity.proposalId, field);
-    if (['accept-source', 'return-to-source'].includes(decision)) changes[FIELD_COLUMNS[entity.entityType][field.fieldPath]] = field.sourceValue;
+    const column = FIELD_COLUMNS[entity.entityType][field.fieldPath];
+    if (column && ['accept-source', 'return-to-source'].includes(decision)) changes[column] = field.sourceValue;
   }
   return changes;
 }
@@ -255,11 +258,15 @@ async function createEntity(trx, entity, parentIds, siteId, workPackageId, appro
     const [id] = await trx('circuits').insert({ public_id: publicId, work_package_id: workPackageId, circuit_reference: changes.circuit_reference, description: changes.description || '', media: changes.media, status: changes.status || 'planned' });
     row = await trx('circuits').where({ id }).first();
     parentIds.set(entity.sourceRecordKey, row.id);
-  } else {
+  } else if (entity.entityType === 'segment') {
     const circuitId = entity.parentSourceRecordKey ? parentIds.get(entity.parentSourceRecordKey) : undefined;
     if (!circuitId || !changes.segment_reference || !changes.from_endpoint || !changes.to_endpoint) throw httpError(422, 'required_field_deferred', 'Required segment fields must be approved');
     const [id] = await trx('segments').insert({ public_id: publicId, circuit_id: circuitId, segment_reference: changes.segment_reference, sequence: entity.sequence || 0, from_endpoint: changes.from_endpoint, to_endpoint: changes.to_endpoint, length_metres: changes.length_metres === undefined ? null : changes.length_metres, notes: changes.notes || '' });
     row = await trx('segments').where({ id }).first();
+  } else {
+    if (!changes.description || changes.quantity_required === undefined || !changes.unit) throw httpError(422, 'required_field_deferred', 'Required material requirement fields must be approved');
+    const [id] = await trx('consumable_requirements').insert({ public_id: publicId, work_package_id: workPackageId, description: changes.description, quantity_required: changes.quantity_required, unit: changes.unit });
+    row = await trx('consumable_requirements').where({ id }).first();
   }
   if (!row) throw httpError(500, 'import_persistence_failed', 'Imported entity could not be read after creation');
   return /** @type {DbRow} */ (row);
@@ -269,10 +276,29 @@ async function createEntity(trx, entity, parentIds, siteId, workPackageId, appro
 async function updateEntity(trx, entity, approval, expectedVersion) {
   const table = TABLES[entity.entityType];
   const changes = acceptedChanges(entity, approval);
-  if (!Object.keys(changes).length) return /** @type {Promise<DbRow>} */ (trx(table).where({ public_id: entity.entityPublicId }).first());
+  const acceptsExtension = entity.fields.some((field) => !FIELD_COLUMNS[entity.entityType][field.fieldPath] && ['accept-source', 'return-to-source'].includes(decisionFor(approval, entity.proposalId, field)));
+  if (!Object.keys(changes).length && !acceptsExtension) return /** @type {Promise<DbRow>} */ (trx(table).where({ public_id: entity.entityPublicId }).first());
   const changed = await trx(table).where({ public_id: entity.entityPublicId, version: expectedVersion }).update({ ...changes, version: expectedVersion + 1 });
   if (!changed) throw httpError(409, 'stale_approval', 'Import approval is stale');
   return /** @type {Promise<DbRow>} */ (trx(table).where({ public_id: entity.entityPublicId }).first());
+}
+
+/** @param {PluginRegistry} registry @param {ValidatedImportDraft} draft @param {EntityProposal} entity @param {Transaction} trx @param {DbRow} entityRow @param {ImportApproval} approval */
+async function persistAcceptedExtensions(registry, draft, entity, trx, entityRow, approval) {
+  if (!draft.presentationId) return;
+  const presentation = registry.presentation(draft.presentationId);
+  if (!presentation) throw httpError(409, 'presentation_unavailable', 'Import presentation is no longer available');
+  const entityType = entity.entityType === 'consumable_requirement' ? 'consumable-requirement' : entity.entityType.replace('_', '-');
+  for (const field of entity.fields) {
+    if (!field.fieldPath.startsWith('extension.') || !['accept-source', 'return-to-source'].includes(decisionFor(approval, entity.proposalId, field))) continue;
+    const definition = presentation.fields.find((candidate) => candidate.binding === field.fieldPath && candidate.entityType === entityType);
+    if (!definition) throw httpError(409, 'presentation_contract_mismatch', 'Import extension field is no longer available');
+    const storedFieldId = definition.binding.slice(`extension.${presentation.pluginId}.`.length);
+    const key = { plugin_id: presentation.pluginId, entity_type: entityType, entity_public_id: entityRow.public_id, field_id: storedFieldId };
+    const existing = await trx('extension_values').where(key).first();
+    if (existing) await trx('extension_values').where({ id: existing.id }).update({ value_json: JSON.stringify(field.sourceValue), version: existing.version + 1, updated_at: trx.fn.now() });
+    else await trx('extension_values').insert({ public_id: uuid(), ...key, value_json: JSON.stringify(field.sourceValue), version: 1 });
+  }
 }
 
 /** @param {PluginRegistry} registry @param {string} draftId @param {number} actorUserId @param {unknown} input @returns {Promise<ImportResult>} */
@@ -347,6 +373,7 @@ async function apply(registry, draftId, actorUserId, input) {
       proposalEntry.entityPublicId = entityRow.public_id;
       if (record.entityType === 'work_package') workPackageId = entityRow.id;
       if (record.entityType === 'circuit') parentIds.set(record.sourceRecordKey, entityRow.id);
+      await persistAcceptedExtensions(registry, draft, proposalEntry, trx, entityRow, approval);
       let link = /** @type {LinkOrOwnershipRow | undefined} */ (await trx('import_entity_links').where({ source_id: source.id, source_record_key: record.sourceRecordKey, entity_type: record.entityType }).first());
       if (link) {
         await trx('import_entity_links').where({ id: link.id }).update({ entity_public_id: entityRow.public_id, last_seen_run_id: runId, absent_at: null, reconciliation_state: 'linked' });
@@ -359,7 +386,12 @@ async function apply(registry, draftId, actorUserId, input) {
       for (const field of proposalEntry.fields) {
         const decision = decisionFor(approval, proposalEntry.proposalId, field);
         if (field.conflict) counts.conflicted += 1;
-        const currentValue = entityRow[FIELD_COLUMNS[record.entityType][field.fieldPath]];
+        const column = FIELD_COLUMNS[record.entityType][field.fieldPath];
+        let currentValue = column ? entityRow[column] : null;
+        if (!column && field.fieldPath.startsWith('extension.')) {
+          const extension = await trx('extension_values').where({ entity_public_id: entityRow.public_id }).whereRaw("? = 'extension.' || plugin_id || '.' || field_id", [field.fieldPath]).first();
+          currentValue = extension ? JSON.parse(extension.value_json) : null;
+        }
         await upsertOwnership(trx, proposalEntry, link, field, decision, runId, currentValue);
       }
     }

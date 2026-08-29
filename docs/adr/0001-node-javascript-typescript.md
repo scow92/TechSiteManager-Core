@@ -6,7 +6,7 @@
 ## Context
 
 TechSiteManager Core is a Node.js application with an Express/Knex/SQLite
-server, a plain browser client, and Plugin API V1 packages loaded through
+server, a plain browser client, and Plugin API packages loaded through
 CommonJS. Runtime validators protect the application from JSON, YAML, plugin,
 HTTP, and database boundary data. A language rewrite would create migration
 and compatibility risk without evidence that it addresses a measured limit.
@@ -18,7 +18,7 @@ and TypeScript is introduced incrementally as a strict, no-emit development and
 CI checker for existing JavaScript and new internal code. No runtime TypeScript
 loader is introduced.
 
-Plugin API V1 remains CommonJS-compatible. Public declarations improve author
+Plugin API V2 remains CommonJS-compatible. Public declarations improve author
 feedback but do not replace AJV, YAML schema validation, manual guards, bounds,
 durable-ID checks, version checks, or registry-conflict checks. Runtime schemas
 remain authoritative for untrusted and external values.

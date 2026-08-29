@@ -9,6 +9,11 @@ versions, anchors, aliases, merge keys, custom tags, excessive size/depth,
 unknown transforms, secret-shaped fields, executable expressions, SQL/HTTP
 logic, and filesystem escape.
 
+Presentation profiles additionally restrict entity types, components, core
+bindings, plugin namespaces, field types, limits, options, section references,
+and view counts. Only authenticated users receive the active sanitized
+descriptor. The browser never loads files or executable code from a plugin.
+
 Raw uploaded or pasted artifacts are transient and are not stored by default.
 Core persists hashes, stable source identity, provider/profile versions,
 normalized expiring drafts, decisions, links, ownership, warning codes, and

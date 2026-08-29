@@ -27,7 +27,7 @@ function loadOne(spec, searchRoot) {
   const instanceConfig = configEntry.config === undefined ? {} : plainRecord(configEntry.config, 'plugin_config_entry_invalid');
   const resolved = resolvePackage(configEntry.package, searchRoot);
   if (resolved.metadata.version !== configEntry.expectedVersion) throw pluginError('plugin_expected_version_mismatch');
-  /** CommonJS is the stable Plugin API V1 package boundary. @type {unknown} */
+  /** CommonJS is the stable Plugin API package boundary. @type {unknown} */
   const requiredExport = require(resolved.entry);
   const { plugin, manifest } = validateManifest(requiredExport, resolved.metadata, instanceConfig);
   return stageContributions(plugin, manifest, resolved, configEntry.package, instanceConfig);
@@ -47,7 +47,7 @@ function loadPlugins(options = {}) {
       const failed = failureSpec(spec);
       const code = errorCode(error);
       if (failed.required) {
-        const safeCode = /^(?:plugin_|profile_|duplicate_)/.test(code) ? code : 'plugin_load_failed';
+        const safeCode = /^(?:plugin_|profile_|presentation_|duplicate_)/.test(code) ? code : 'plugin_load_failed';
         const sanitized = pluginError(safeCode, failed.package);
         sanitized.cause = undefined;
         throw sanitized;

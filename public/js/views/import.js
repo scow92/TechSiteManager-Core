@@ -11,10 +11,13 @@ import { approvalFromPreview, reconciliationPreview } from '../import/reconcilia
 /** @param {ImportResult} result */
 async function appliedResult(result) {
   const heading = result.status === 'applied' ? 'Import applied' : 'Import complete';
+  const presentation = /** @type {import('../../../server/types/browser-models').PresentationProfile | null} */ (await api('/presentation-profiles/work-package'));
+  const terms = presentation?.terms || { singular: 'Work package', plural: 'Work packages' };
+  const initialView = presentation?.views[0]?.id || 'details';
   if (!result.workPackagePublicId) {
     return el('div', { class: 'panel stack import-result' }, el('h2', {}, heading),
-      el('p', { class: 'error' }, 'The import completed without a work package target. Return to Work Packages and confirm the record before continuing.'),
-      el('div', { class: 'form-actions' }, el('a', { class: 'button secondary', href: '#home' }, 'Return to Work Packages')));
+      el('p', { class: 'error' }, `The import completed without a ${terms.singular.toLowerCase()} target. Return to ${terms.plural} and confirm the record before continuing.`),
+      el('div', { class: 'form-actions' }, el('a', { class: 'button secondary', href: '#home' }, `Return to ${terms.plural}`)));
   }
 
   const publicId = result.workPackagePublicId;
@@ -33,12 +36,12 @@ async function appliedResult(result) {
       el('div', { class: 'result-record' }, el('strong', {}, pack.packageReference), el('span', {}, pack.title), el('span', { class: 'muted' }, `${pack.site.code} — ${pack.site.name}`)),
       el('p', { class: 'muted' }, summary),
       el('div', { class: 'form-actions' },
-        el('a', { class: 'button', href: `#package/${encodeURIComponent(publicId)}` }, 'Open work package'),
-        el('a', { class: 'button secondary', href: '#home' }, 'Return to Work Packages')));
+        el('a', { class: 'button', href: `#package/${encodeURIComponent(publicId)}/${initialView}` }, `Open ${terms.singular.toLowerCase()}`),
+        el('a', { class: 'button secondary', href: '#home' }, `Return to ${terms.plural}`)));
   } catch (error) {
     return el('div', { class: 'panel stack import-result' }, el('h2', {}, heading),
-      el('p', { class: 'error' }, `The imported work package is not currently available: ${errorMessage(error)}`),
-      el('div', { class: 'form-actions' }, el('a', { class: 'button secondary', href: '#home' }, 'Return to Work Packages')));
+      el('p', { class: 'error' }, `The imported ${terms.singular.toLowerCase()} is not currently available: ${errorMessage(error)}`),
+      el('div', { class: 'form-actions' }, el('a', { class: 'button secondary', href: '#home' }, `Return to ${terms.plural}`)));
   }
 }
 

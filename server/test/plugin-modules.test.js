@@ -32,12 +32,13 @@ test('package resolver accepts exact packages and rejects path-like input', () =
   assert.throws(() => resolvePackage('./fixture-package', root), { code: 'plugin_package_name_invalid' });
 });
 
-test('manifest validator enforces API V1, version pinning, and instance schema', () => {
+test('manifest validator accepts V1/V2, version pinning, and instance schema', () => {
   const requiredExport = {
     manifest: { apiVersion: 1, id: 'fixture.valid', version: '1.0.0', coreCompatibility: '>=1.0.0-rc.1 <2.0.0' },
     configSchema: { type: 'object', properties: { enabled: { type: 'boolean' } }, required: ['enabled'], additionalProperties: false }
   };
   assert.equal(validateManifest(requiredExport, { version: '1.0.0' }, { enabled: true }).manifest.id, 'fixture.valid');
+  assert.equal(validateManifest({ ...requiredExport, manifest: { ...requiredExport.manifest, apiVersion: 2 } }, { version: '1.0.0' }, { enabled: true }).manifest.apiVersion, 2);
   assert.throws(() => validateManifest(requiredExport, { version: '2.0.0' }, { enabled: true }), { code: 'plugin_manifest_version_mismatch' });
   assert.throws(() => validateManifest(requiredExport, { version: '1.0.0' }, { enabled: 'yes' }), { code: 'plugin_instance_config_invalid' });
 });

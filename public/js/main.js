@@ -13,6 +13,7 @@ import { packageView } from './views/work-package.js';
 /** @typedef {import('../../server/types/browser-models').WorkPackageSummary} WorkPackageSummary */
 /** @type {User | null} */
 let user = null;
+let packageInitialView = 'details';
 
 /** @param {string} id @returns {HTMLElement} */
 function shellElement(id) {
@@ -34,6 +35,7 @@ const packageNav = shellElement('package-nav');
 const brandContext = shellElement('brand-context');
 const siteContext = /** @type {HTMLSelectElement} */ (shellElement('site-context'));
 const packageContext = /** @type {HTMLSelectElement} */ (shellElement('package-context'));
+const packageContextLabel = shellElement('package-context-label');
 if (!(siteContext instanceof HTMLSelectElement) || !(packageContext instanceof HTMLSelectElement)) throw new Error('Context selectors are invalid');
 
 const themeColours = { dark: '#0f1419', light: '#f2f5f8' };
@@ -76,11 +78,30 @@ function updateActiveNavigation(route) {
   if (selected) selected.classList.add('active');
 }
 
+/** @param {import('../../server/types/browser-models').PresentationProfile | null} presentation @param {string} packageId */
+function renderPackageNavigation(presentation, packageId) {
+  const views = presentation?.views || [
+    { id: 'details', label: 'Details', icon: '▤' },
+    { id: 'work-items', label: 'Work items', icon: '▥' },
+    { id: 'connections', label: 'Circuits', icon: '◉' },
+    { id: 'consumables', label: 'Consumables', icon: '▣' }
+  ];
+  packageContextLabel.textContent = presentation?.terms.singular || 'Work package';
+  packageInitialView = views[0]?.id || 'details';
+  packageContext.setAttribute('aria-label', `${presentation?.terms.singular || 'Work package'} context`);
+  packageNav.replaceChildren(
+    el('p', { class: 'nav-label' }, presentation?.terms.singular || 'Work package'),
+    ...views.map((view) => el('a', { class: 'nav-item', href: `#package/${encodeURIComponent(packageId)}/${view.id}`, 'data-package-view': view.id }, el('span', { 'aria-hidden': 'true' }, view.icon || '▤'), view.label)),
+    el('a', { class: 'nav-item', href: '#import', 'data-route': 'import' }, el('span', { 'aria-hidden': 'true' }, '▩'), 'Import')
+  );
+}
+
 /** @param {string} route */
 async function updateContext(route) {
-  const [sites, packages] = await Promise.all([
+  const [sites, packages, presentation] = await Promise.all([
     /** @type {Promise<Site[]>} */ (api('/sites')),
-    /** @type {Promise<WorkPackageSummary[]>} */ (api('/work-packages'))
+    /** @type {Promise<WorkPackageSummary[]>} */ (api('/work-packages')),
+    /** @type {Promise<import('../../server/types/browser-models').PresentationProfile | null>} */ (api('/presentation-profiles/work-package'))
   ]);
   const [kind, rawId] = route.split('/');
   const routeId = rawId ? decodeURIComponent(rawId) : '';
@@ -90,12 +111,12 @@ async function updateContext(route) {
   siteContext.replaceChildren(...siteOptions);
   siteContext.value = activeSiteId;
   const visiblePackages = activeSiteId ? packages.filter((entry) => entry.sitePublicId === activeSiteId) : packages;
-  packageContext.replaceChildren(el('option', { value: '' }, 'Select work package…'), ...visiblePackages.map((entry) => el('option', { value: entry.publicId }, entry.packageReference)));
+  packageContext.replaceChildren(el('option', { value: '' }, `Select ${(presentation?.terms.singular || 'work package').toLowerCase()}…`), ...visiblePackages.map((entry) => el('option', { value: entry.publicId }, entry.packageReference)));
   packageContext.value = activePackage?.publicId || '';
   siteNav.hidden = !activeSiteId;
   packageNav.hidden = !activePackage;
   for (const link of siteNav.querySelectorAll('[data-site-view]')) link.setAttribute('href', `#site/${encodeURIComponent(activeSiteId)}/${link.getAttribute('data-site-view')}`);
-  for (const link of packageNav.querySelectorAll('[data-package-view]')) link.setAttribute('href', `#package/${encodeURIComponent(activePackage?.publicId || '')}/${link.getAttribute('data-package-view')}`);
+  renderPackageNavigation(presentation, activePackage?.publicId || '');
   brandContext.textContent = activePackage?.packageReference || sites.find((site) => site.publicId === activeSiteId)?.code || 'No site';
 }
 
@@ -172,7 +193,7 @@ siteContext.addEventListener('change', () => {
   location.hash = siteContext.value ? `#site/${encodeURIComponent(siteContext.value)}/overview` : '#home';
 });
 packageContext.addEventListener('change', () => {
-  location.hash = packageContext.value ? `#package/${encodeURIComponent(packageContext.value)}/details` : siteContext.value ? `#site/${encodeURIComponent(siteContext.value)}/overview` : '#home';
+  location.hash = packageContext.value ? `#package/${encodeURIComponent(packageContext.value)}/${packageInitialView}` : siteContext.value ? `#site/${encodeURIComponent(siteContext.value)}/overview` : '#home';
 });
 
 window.addEventListener('hashchange', () => { renderSafely(); });

@@ -11,14 +11,20 @@ and any organization-specific findings must remain outside this repository.
   `5d98b43f349c8329df71b0c1a603782b0c4ff368`
 - Evidence-bearing source commit:
   `96f9c62d17eb7a82f09f816c83933700e69fdc3a`
-- Core version: `1.0.0-rc.1`
-- Plugin API version: `1`
+- Evidence baseline core version: `1.0.0-rc.1`
+- Evidence baseline Plugin API version: `1`
+- Current proposed core version: `1.1.0-rc.1`
+- Current proposed Plugin API version: `2`
 - Outbound licence: Apache License, Version 2.0 (`Apache-2.0`)
 - Copyright holder: Copyright 2026 Sam Cowie
 - CycloneDX SBOM serial:
   `urn:uuid:9014c75a-e7ad-4f8a-b374-4e9266086f79`
 - CycloneDX SBOM SHA-256:
   `49011a82d6d4eab74e155866935bd3fe9e3e6bf03daeaa22855e2375a9247217`
+
+The recorded evidence predates Plugin API V2. The V2 release candidate must be
+revalidated and must receive the still-unrecorded approvals below before these
+historical results can be treated as evidence for that candidate.
 
 The evidence report and approval checklist are documentation-only additions
 made after the evidence-bearing source commit. Because a commit cannot contain

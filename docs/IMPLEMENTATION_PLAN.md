@@ -48,6 +48,12 @@ or private repository details.
 - [x] Tighten configuration/contribution schemas and approval validation.
 - [x] Expose required exporters through a bounded core-owned route.
 - [x] Complete descriptor-driven controls for every supported input type.
+- [x] Add Plugin API V2 data-only presentation profiles without plugin browser
+  code, routes, migrations, or database handles.
+- [x] Add core-owned typed extension persistence, optimistic writes, audit,
+  package projection, and transactional V2 import reconciliation.
+- [x] Preserve V1 package compatibility and require a V2-compatible core range
+  for packages that contribute presentations.
 
 ## Offline and operations
 

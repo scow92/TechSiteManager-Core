@@ -5,5 +5,5 @@
   "main": "index.cjs",
   "type": "commonjs",
   "license": "Apache-2.0",
-  "files": ["index.cjs", "provider.cjs", "exporter.cjs", "profile.yaml", "README.md", "LICENSE"]
+  "files": ["index.cjs", "provider.cjs", "exporter.cjs", "profile.yaml", "presentation.yaml", "README.md", "LICENSE"]
 }

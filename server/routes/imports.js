@@ -24,6 +24,13 @@ module.exports = function createImportRouter(registry) {
 
   router.get('/import-providers', (_req, res) => res.json(registry.providers));
   router.get('/plugin-exporters', (_req, res) => res.json(registry.exporters));
+  router.get('/presentation-profiles/:entityType', (req, res, next) => {
+    try {
+      const presentation = registry.presentationFor(routeParam(req.params.entityType));
+      if (!presentation) return res.status(204).end();
+      res.json(presentation);
+    } catch (error) { next(error); }
+  });
   router.post('/import-providers/:providerId/drafts', auth.requireWrite, async (req, res, next) => {
     try { res.status(201).json(await imports.stage(registry, routeParam(req.params.providerId), actorId(req), req.body)); } catch (error) { next(error); }
   });

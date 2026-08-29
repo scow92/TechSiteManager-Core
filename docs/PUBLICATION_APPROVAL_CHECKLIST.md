@@ -9,7 +9,9 @@ assembled the evidence but is not a human approver.
 - [x] GitHub records `scow92/TechSiteManager-Core` as public from 2026-08-29
   08:40:53 UTC. At that time `main` pointed at
   `5d98b43f349c8329df71b0c1a603782b0c4ff368`.
-- [x] The repository remains a release candidate at version `1.0.0-rc.1`.
+- [x] At the public-visibility event, the repository was a release candidate at
+  version `1.0.0-rc.1`. The current proposed Plugin API V2 candidate is
+  `1.1.0-rc.1` and requires fresh release evidence.
 - [x] Public visibility applies to the source repository only. It did not
   publish an npm package, public container image, GitHub release, Pages site,
   or hosted deployment.

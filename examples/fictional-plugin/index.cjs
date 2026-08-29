@@ -8,16 +8,19 @@ function normalizeLabel(value) {
 /** @type {import('techsitemanager/plugin-api').PluginPackage} */
 const plugin = {
   manifest: {
-    apiVersion: 1,
+    apiVersion: 2,
     id: 'example.fictional-facility',
     version: '1.0.0',
-    coreCompatibility: '>=1.0.0-rc.1 <2.0.0'
+    coreCompatibility: '>=1.1.0-rc.1 <2.0.0'
   },
   transforms: {
     'example.normalize-label': normalizeLabel
   },
   profiles: [
     { id: 'example.facility-json-v1', file: 'profile.yaml' }
+  ],
+  presentations: [
+    { id: 'example.fictional-facility.presentation-v1', file: 'presentation.yaml' }
   ],
   imports: [
     {

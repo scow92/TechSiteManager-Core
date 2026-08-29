@@ -69,14 +69,14 @@ async function restart(instance, configName) {
   throw new Error(`Server did not restart: ${diagnostics.slice(-500)}`);
 }
 
-async function setup(page, base, suffix) {
+async function setup(page, base, suffix, emptyMessage = 'No active work packages yet.') {
   await page.goto(base);
   await page.getByLabel('Username').fill(`admin-${suffix}`);
   await page.getByLabel('Password').fill(`fictional-browser-password-${suffix}`);
   await page.getByLabel('Display name').fill('Browser Administrator');
   await page.getByRole('button', { name: 'Create account' }).click();
   await page.getByRole('heading', { name: 'Home', exact: true }).waitFor();
-  await page.getByText(/No active work packages yet/).waitFor();
+  await page.getByText(emptyMessage, { exact: true }).waitFor();
 }
 
 (async () => {
@@ -135,7 +135,7 @@ async function setup(page, base, suffix) {
     const fictional = await start('fictional-plugin');
     try {
       const page = await browser.newPage();
-      await setup(page, fictional.base, 'fictional');
+      await setup(page, fictional.base, 'fictional', 'No active facility plans yet.');
       await page.goto(`${fictional.base}/#import`);
       await page.getByLabel('Provider').selectOption('example.fictional-facility.json');
       const plan = fs.readFileSync(path.join(root, 'examples', 'fictional-plugin', 'example-plan.json'), 'utf8');
@@ -145,19 +145,19 @@ async function setup(page, base, suffix) {
       await page.getByText('Normalized preview').waitFor();
       await page.getByRole('button', { name: 'Approve import' }).click();
       await page.getByRole('heading', { name: 'Import applied', exact: true }).waitFor();
-      const open = page.getByRole('link', { name: 'Open work package' });
+      const open = page.getByRole('link', { name: 'Open facility plan' });
       const href = await open.getAttribute('href');
-      assert.match(href || '', /^#package\/[0-9a-f-]{36}$/);
-      const packagePublicId = (href || '').slice('#package/'.length);
+      assert.match(href || '', /^#package\/[0-9a-f-]{36}\/plan$/);
+      const packagePublicId = (href || '').split('/')[1];
       await open.click();
       await page.getByRole('heading', { name: 'PKG-DEMO-100', exact: true }).waitFor();
-      assert.equal(new URL(page.url()).hash, `#package/${packagePublicId}`);
+      assert.equal(new URL(page.url()).hash, `#package/${packagePublicId}/plan`);
 
       await page.locator('main').getByRole('link', { name: 'Home', exact: true }).click();
       await page.getByRole('link', { name: 'PKG-DEMO-100', exact: true }).click();
       await page.getByRole('heading', { name: 'PKG-DEMO-100', exact: true }).waitFor();
       await page.locator('main').getByRole('link', { name: 'Home', exact: true }).click();
-      await page.getByLabel('Work Package Search').fill('ITEM-DEMO-A');
+      await page.getByLabel('Facility plan Search').fill('ITEM-DEMO-A');
       await page.getByRole('link', { name: 'PKG-DEMO-100', exact: true }).click();
       await page.getByRole('heading', { name: 'PKG-DEMO-100', exact: true }).waitFor();
 
@@ -175,7 +175,7 @@ async function setup(page, base, suffix) {
       assert.equal(exported.status, 200); assert.match(exported.disposition, /PKG-DEMO-100\.facility\.json/); assert.equal(exported.body.segmentCount, 1);
 
       await page.locator('[data-route="home"]').click();
-      await page.getByLabel('Work Package Search').fill('ITEM-DEMO-A');
+      await page.getByLabel('Facility plan Search').fill('ITEM-DEMO-A');
       await page.getByRole('link', { name: 'PKG-DEMO-100', exact: true }).waitFor();
 
       await restart(fictional, 'zero-plugins');
