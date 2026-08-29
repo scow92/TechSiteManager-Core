@@ -3,6 +3,13 @@
 const fs = require('fs');
 const path = require('path');
 
+/**
+ * @param {string} name
+ * @param {number} fallback
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
 function integer(name, fallback, min, max) {
   const raw = process.env[name];
   const value = raw === undefined ? fallback : Number(raw);
@@ -12,6 +19,11 @@ function integer(name, fallback, min, max) {
   return value;
 }
 
+/**
+ * @param {string} name
+ * @param {boolean} fallback
+ * @returns {boolean}
+ */
 function boolean(name, fallback) {
   const raw = process.env[name];
   if (raw === undefined) return fallback;

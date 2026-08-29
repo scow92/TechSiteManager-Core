@@ -251,6 +251,6 @@ test('generic mutations create sanitized audit events', async () => {
 
 test('static allowlist serves the shell and rejects repository/server paths', async () => {
   assert.equal((await fetch(`${base}/`)).status, 200);
-  assert.equal((await fetch(`${base}/js/app.js`)).status, 200);
+  assert.equal((await fetch(`${base}/js/main.js`)).status, 200);
   for (const forbidden of ['/server/server.js', '/package.json', '/AGENTS.md', '/data/techsitemanager.db']) assert.equal((await fetch(`${base}${forbidden}`)).status, 404);
 });

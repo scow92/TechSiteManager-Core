@@ -5,6 +5,19 @@ const imports = require('../imports/service');
 const exportService = require('../plugins/export-service');
 const auth = require('../lib/auth');
 
+/** @param {import('express').Request} req @returns {number} */
+function actorId(req) {
+  if (!req.user) throw new Error('authenticated route missing user');
+  return req.user.id;
+}
+
+/** @param {string | string[]} value @returns {string} */
+function routeParam(value) {
+  if (typeof value !== 'string') throw new Error('route parameter is invalid');
+  return value;
+}
+
+/** @param {import('techsitemanager/plugin-api').PluginRegistry} registry @returns {express.Router} */
 module.exports = function createImportRouter(registry) {
   const router = express.Router();
   router.use(auth.requireSession);
@@ -12,16 +25,16 @@ module.exports = function createImportRouter(registry) {
   router.get('/import-providers', (_req, res) => res.json(registry.providers));
   router.get('/plugin-exporters', (_req, res) => res.json(registry.exporters));
   router.post('/import-providers/:providerId/drafts', auth.requireWrite, async (req, res, next) => {
-    try { res.status(201).json(await imports.stage(registry, req.params.providerId, req.user.id, req.body)); } catch (error) { next(error); }
+    try { res.status(201).json(await imports.stage(registry, routeParam(req.params.providerId), actorId(req), req.body)); } catch (error) { next(error); }
   });
   router.get('/import-drafts/:draftId', async (req, res, next) => {
-    try { res.json(await imports.getDraft(req.params.draftId, req.user.id)); } catch (error) { next(error); }
+    try { res.json(await imports.getDraft(routeParam(req.params.draftId), actorId(req))); } catch (error) { next(error); }
   });
   router.delete('/import-drafts/:draftId', auth.requireWrite, async (req, res, next) => {
-    try { await imports.cancelDraft(req.params.draftId, req.user.id); res.status(204).end(); } catch (error) { next(error); }
+    try { await imports.cancelDraft(routeParam(req.params.draftId), actorId(req)); res.status(204).end(); } catch (error) { next(error); }
   });
   router.post('/import-drafts/:draftId/apply', auth.requireWrite, async (req, res, next) => {
-    try { res.json(await imports.apply(registry, req.params.draftId, req.user.id, req.body)); } catch (error) { next(error); }
+    try { res.json(await imports.apply(registry, routeParam(req.params.draftId), actorId(req), req.body)); } catch (error) { next(error); }
   });
   router.get('/import-runs/:runId', async (req, res, next) => {
     try { res.json(await imports.getRun(req.params.runId)); } catch (error) { next(error); }

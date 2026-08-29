@@ -5,11 +5,20 @@
   "license": "Apache-2.0",
   "description": "Generic planning and record management for structured-cabling work",
   "main": "server/server.js",
+  "types": "types/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "plugin-api": ["types/plugin-api.d.ts"],
+      "import-contracts": ["types/import-contracts.d.ts"],
+      "*": ["types/index.d.ts"]
+    }
+  },
   "files": [
     "server",
     "public",
     "config",
     "examples/fictional-plugin",
+    "types/*.d.ts",
     "docs",
     "README.md",
     "AGENTS.md",
@@ -20,16 +29,19 @@
     "Dockerfile",
     "docker-compose.yml"
   ],
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "node server/server.js",
     "migrate": "node server/scripts/migrate.js",
     "lint": "eslint .",
     "syntax": "find public server examples -type f \\( -name '*.js' -o -name '*.cjs' \\) -print0 | xargs -0 -n1 node --check",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.contracts.json && tsc --noEmit -p tsconfig.browser.json",
     "test": "node --test server/test/*.test.js",
     "test:e2e": "node server/test/e2e.playwright.js",
     "test:recovery": "node --test server/test/recovery.test.js",
-    "test:all": "npm run lint && npm run syntax && npm test && npm run test:e2e",
+    "test:all": "npm run lint && npm run syntax && npm run typecheck && npm test && npm run test:e2e",
     "backup": "node server/scripts/backup.js",
     "restore": "node server/scripts/restore.js",
     "sbom": "npm sbom --sbom-format cyclonedx > sbom.cdx.json",
@@ -37,7 +49,7 @@
     "scan:history": "node server/scripts/history-disclosure-scan.js",
     "review:licenses": "node server/scripts/dependency-license-review.js",
     "review:package": "node server/scripts/package-content-review.js",
-    "verify:release": "npm run lint && npm run syntax && npm test && npm run test:e2e && npm run scan:public && npm run scan:history && npm run review:licenses && npm run review:package"
+    "verify:release": "npm run lint && npm run syntax && npm run typecheck && npm test && npm run test:e2e && npm run scan:public && npm run scan:history && npm run review:licenses && npm run review:package"
   },
   "dependencies": {
     "ajv": "^8.17.1",
@@ -50,8 +62,13 @@
   },
   "devDependencies": {
     "@techsitemanager/fictional-facility-plugin": "file:examples/fictional-plugin",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.13.3",
+    "@types/semver": "^7.8.0",
     "eslint": "^10.8.1",
     "globals": "^17.9.0",
-    "playwright": "^1.62.1"
+    "playwright": "^1.62.1",
+    "typescript": "^7.0.2"
   }
 }

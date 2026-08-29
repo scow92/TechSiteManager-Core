@@ -7,7 +7,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..', '..');
 const allowedRootFiles = new Set(['AGENTS.md', 'CONTRIBUTING.md', 'COPYRIGHT.md', 'Dockerfile', 'LICENSE', 'README.md', 'SECURITY.md', 'docker-compose.yml', 'package.json']);
-const allowedDirectories = new Set(['config', 'docs', 'examples', 'public', 'server']);
+const allowedDirectories = new Set(['config', 'docs', 'examples', 'public', 'server', 'types']);
 const forbiddenExtensions = new Set(['.7z', '.bak', '.db', '.dump', '.gz', '.key', '.log', '.pem', '.sqlite', '.sqlite3', '.tar', '.tgz', '.zip']);
 const cache = fs.mkdtempSync(path.join(os.tmpdir(), 'tsm-package-review-'));
 let output;

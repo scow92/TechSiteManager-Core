@@ -2,7 +2,16 @@
 
 const crypto = require('crypto');
 
+/**
+ * @param {import('knex').Knex.Transaction} trx
+ * @param {number | null | undefined} actorUserId
+ * @param {string} action
+ * @param {string} entityType
+ * @param {string | null | undefined} entityPublicId
+ * @param {Readonly<Record<string, unknown>>} [metadata]
+ */
 async function record(trx, actorUserId, action, entityType, entityPublicId, metadata = {}) {
+  /** @type {Record<string, unknown>} */
   const safe = {};
   for (const [key, value] of Object.entries(metadata)) {
     if (['count', 'fields', 'status', 'providerId', 'runId', 'reasonCode'].includes(key)) safe[key] = value;

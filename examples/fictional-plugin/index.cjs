@@ -1,10 +1,12 @@
 'use strict';
 
+/** @param {unknown} value @returns {string} */
 function normalizeLabel(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
 
-module.exports = {
+/** @type {import('techsitemanager/plugin-api').PluginPackage} */
+const plugin = {
   manifest: {
     apiVersion: 1,
     id: 'example.fictional-facility',
@@ -41,3 +43,5 @@ module.exports = {
     }
   ]
 };
+
+module.exports = plugin;

@@ -14,13 +14,17 @@ const POLICIES = new Set(['source-owned', 'user-owned', 'source-default', 'revie
 const SECRET_KEY = /(secret|password|credential|token|api[-_]?key|private[-_]?key)/i;
 const FORBIDDEN_VALUE = /(?:BEGIN [A-Z ]*PRIVATE KEY|\b(?:https?|file):\/\/|\bSELECT\s+.+\s+FROM\b|\brequire\s*\(|=>|\$\{)/i;
 
+/** @param {string} code @param {string} [pathName] @returns {never} */
 function fail(code, pathName = 'profile') {
-  const error = new Error(code);
-  error.code = code;
-  error.path = pathName;
-  throw error;
+  throw Object.assign(new Error(code), { code, path: pathName });
 }
 
+/**
+ * @param {unknown} value
+ * @param {number} [depth]
+ * @param {{ collections: number }} [state]
+ * @param {string} [pathName]
+ */
 function inspect(value, depth = 0, state = { collections: 0 }, pathName = 'profile') {
   if (depth > MAX_DEPTH) fail('profile_too_deep', pathName);
   if (Array.isArray(value)) {
@@ -42,41 +46,57 @@ function inspect(value, depth = 0, state = { collections: 0 }, pathName = 'profi
   }
 }
 
+/** @param {unknown} value @param {string} pathName @returns {Record<string, unknown>} */
 function ensurePlainMap(value, pathName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('profile_invalid_map', pathName);
+  return /** @type {Record<string, unknown>} */ (value);
 }
 
+/** @template T @param {T} value @returns {Readonly<T>} */
 function deepFreeze(value) {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
-  for (const entry of Object.values(value)) deepFreeze(entry);
+  for (const key of Reflect.ownKeys(value)) deepFreeze(Reflect.get(value, key));
   return Object.freeze(value);
 }
 
+/**
+ * @param {string} source
+ * @param {ReadonlyMap<string, import('techsitemanager/plugin-api').NamedTransform>} registeredTransforms
+ * @returns {Readonly<import('techsitemanager/plugin-api').ImportProfile>}
+ */
 function parseProfile(source, registeredTransforms) {
   if (Buffer.byteLength(source) > MAX_BYTES) fail('profile_too_large');
   if (/(^|[\s,[{])(?:&|\*)[A-Za-z0-9_-]+|(^|\s)<<\s*:/m.test(source)) fail('profile_yaml_alias_forbidden');
-  const document = YAML.parseDocument(source, { uniqueKeys: true, maxAliasCount: 0, prettyErrors: false, strict: true });
+  const document = YAML.parseDocument(source, { uniqueKeys: true, prettyErrors: false, strict: true });
   if (document.errors.length || document.warnings.length) fail('profile_invalid_yaml');
-  const profile = document.toJS({ maxAliasCount: 0 });
-  ensurePlainMap(profile, 'profile');
+  const profile = ensurePlainMap(document.toJS({ maxAliasCount: 0 }), 'profile');
   for (const key of Object.keys(profile)) if (!ALLOWED_KEYS.has(key)) fail('profile_unknown_key', `profile.${key}`);
   if (profile.schemaVersion !== 'techsitemanager.io/import-profile/v1') fail('profile_schema_version');
-  if (!DURABLE_ID.test(profile.id || '') || String(profile.id).length > 128) fail('profile_invalid_id', 'profile.id');
+  if (typeof profile.id !== 'string' || !DURABLE_ID.test(profile.id) || profile.id.length > 128) fail('profile_invalid_id', 'profile.id');
   inspect(profile);
 
   for (const name of ['aliases', 'mappings', 'defaults', 'statusMap', 'categoryMap', 'fieldOwnership', 'identity']) {
     if (profile[name] !== undefined) ensurePlainMap(profile[name], `profile.${name}`);
   }
-  for (const [field, policy] of Object.entries(profile.fieldOwnership || {})) {
-    if (!POLICIES.has(policy)) fail('profile_invalid_ownership', `profile.fieldOwnership.${field}`);
+  const fieldOwnership = profile.fieldOwnership === undefined ? {} : ensurePlainMap(profile.fieldOwnership, 'profile.fieldOwnership');
+  for (const [field, policy] of Object.entries(fieldOwnership)) {
+    if (typeof policy !== 'string' || !POLICIES.has(policy)) fail('profile_invalid_ownership', `profile.fieldOwnership.${field}`);
   }
-  if (!Array.isArray(profile.transforms || [])) fail('profile_invalid_transforms', 'profile.transforms');
-  for (const [index, transformId] of (profile.transforms || []).entries()) {
+  const transforms = profile.transforms || [];
+  if (!Array.isArray(transforms)) fail('profile_invalid_transforms', 'profile.transforms');
+  for (const [index, transformId] of transforms.entries()) {
+    if (typeof transformId !== 'string') fail('profile_unknown_transform', `profile.transforms[${index}]`);
     if (!DURABLE_ID.test(transformId) || !registeredTransforms.has(transformId)) fail('profile_unknown_transform', `profile.transforms[${index}]`);
   }
-  return deepFreeze(profile);
+  return deepFreeze(/** @type {import('techsitemanager/plugin-api').ImportProfile} */ (/** @type {unknown} */ (profile)));
 }
 
+/**
+ * @param {string} packageRoot
+ * @param {string} relativeFile
+ * @param {ReadonlyMap<string, import('techsitemanager/plugin-api').NamedTransform>} registeredTransforms
+ * @returns {Readonly<import('techsitemanager/plugin-api').ImportProfile & { hash: `sha256:${string}` }>}
+ */
 function loadProfile(packageRoot, relativeFile, registeredTransforms) {
   if (typeof relativeFile !== 'string' || !relativeFile || path.isAbsolute(relativeFile)) fail('profile_path_invalid');
   const root = fs.realpathSync(packageRoot);

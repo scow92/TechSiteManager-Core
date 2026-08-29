@@ -1,0 +1,46 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["ES2024"],
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "noEmit": true,
+    "paths": {
+      "techsitemanager": ["./types/index.d.ts"],
+      "techsitemanager/import-contracts": ["./types/import-contracts.d.ts"],
+      "techsitemanager/plugin-api": ["./types/plugin-api.d.ts"]
+    },
+    "resolveJsonModule": true,
+    "strict": true,
+    "target": "ES2024",
+    "types": ["node"]
+  },
+  "include": [
+    "server/types/express.d.ts",
+    "server/app.js",
+    "server/config.js",
+    "server/imports/contracts.js",
+    "server/imports/artifacts.js",
+    "server/imports/draft-storage.js",
+    "server/imports/fingerprints.js",
+    "server/imports/reconcile.js",
+    "server/imports/service.js",
+    "server/lib/auth.js",
+    "server/lib/concurrency.js",
+    "server/lib/errors.js",
+    "server/lib/validation.js",
+    "server/lib/work-packages.js",
+    "server/plugins/export-service.js",
+    "server/plugins/contracts.js",
+    "server/plugins/contribution-validator.js",
+    "server/plugins/loader.js",
+    "server/plugins/manifest-validator.js",
+    "server/plugins/package-resolver.js",
+    "server/plugins/profiles.js",
+    "server/plugins/registry.js",
+    "server/routes/imports.js"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "examples/fictional-plugin/**/*.cjs",
+    "types/**/*.d.ts",
+    "types/test/**/*.ts"
+  ]
+}

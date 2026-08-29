@@ -12,8 +12,13 @@ backup/restore are core capabilities.
 
 ## Status
 
-This repository is a private public-release candidate. It must not be made
-public until the remaining review and publication approvals are complete.
+This source repository is public. Version `1.0.0-rc.1` remains a release
+candidate and Plugin API V1 remains the supported plugin contract.
+
+GitHub recorded public visibility on 2026-08-29 at 08:40:53 UTC, while `main`
+pointed at commit `5d98b43f349c8329df71b0c1a603782b0c4ff368`. Making the
+source repository public did not publish an npm package, public container
+image, GitHub release, Pages site, or hosted TechSiteManager deployment.
 
 ## Run locally
 
@@ -41,6 +46,7 @@ The example consumes only the invented data in
 ```bash
 npm run lint
 npm run syntax
+npm run typecheck
 npm test
 npm run test:e2e
 npm run scan:public
@@ -56,8 +62,9 @@ curl --fail http://127.0.0.1:3000/api/health
 
 ## Architecture
 
-The browser is plain JavaScript with a service-worker shell and IndexedDB
-queues. Offline mutations replay in FIFO order; transient and unclassified
+The browser is plain JavaScript using native ES modules without a framework,
+bundler, transpiler, or build step. A service-worker shell and IndexedDB
+queues provide offline support. Offline mutations replay in FIFO order; transient and unclassified
 failures remain queued, while permanent rejections are visible and explicitly
 retryable. The server is CommonJS on Express, Knex, and SQLite. One
 intentionally designed migration creates the generic fresh-install schema.
@@ -73,7 +80,10 @@ through core-owned authenticated routes.
 
 See [docs/PLUGINS.md](docs/PLUGINS.md),
 [docs/IMPORT_PROVIDER_API.md](docs/IMPORT_PROVIDER_API.md), and
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). The runtime/language policy is recorded
+in [ADR 0001](docs/adr/0001-node-javascript-typescript.md).
+The privacy-safe measurement approach is documented in
+[docs/PERFORMANCE_MEASUREMENT.md](docs/PERFORMANCE_MEASUREMENT.md).
 
 ## Licence
 
@@ -81,3 +91,8 @@ Original TechSiteManager code is licensed under the Apache License, Version
 2.0 (`Apache-2.0`). See [LICENSE](LICENSE) and [COPYRIGHT.md](COPYRIGHT.md).
 Third-party components remain under their respective licences; see
 [docs/THIRD_PARTY_LICENSES.md](docs/THIRD_PARTY_LICENSES.md).
+
+The copyright owner confirmed ownership of the original code and selected
+`Apache-2.0` as the outbound licence. The publication event is not evidence of
+technical, security, disclosure, organizational, or release approval that has
+not otherwise been recorded.
