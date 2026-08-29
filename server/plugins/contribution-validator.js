@@ -1,6 +1,7 @@
 'use strict';
 
 const { loadProfile } = require('./profiles');
+const { loadPresentation } = require('./presentations');
 const { assertId, deepFreeze, plainRecord, pluginError } = require('./contracts');
 const { emptyState } = require('./registry');
 
@@ -76,6 +77,18 @@ function stageContributions(plugin, manifest, resolved, packageName, instanceCon
     if (loaded.id !== profileId) throw pluginError('plugin_profile_id_mismatch', manifest.id);
     if (staged.profiles.has(loaded.id)) throw pluginError('duplicate_profile_id', loaded.id);
     staged.profiles.set(loaded.id, loaded);
+  }
+
+  if (manifest.apiVersion === 1 && plugin.presentations !== undefined) throw pluginError('plugin_api_incompatible', manifest.id);
+  for (const value of contributionArray(plugin, 'presentations', manifest.id)) {
+    const entry = plainRecord(value, 'plugin_presentation_invalid');
+    if (Object.keys(entry).some((key) => !['id', 'file'].includes(key))) throw pluginError('plugin_presentation_invalid', manifest.id);
+    const presentationId = assertId(entry.id, 'plugin_presentation_id_invalid');
+    if (typeof entry.file !== 'string') throw pluginError('plugin_presentation_invalid', manifest.id);
+    const loaded = loadPresentation(resolved.packageRoot, entry.file, manifest.id);
+    if (loaded.id !== presentationId) throw pluginError('plugin_presentation_id_mismatch', manifest.id);
+    if (staged.presentations.has(loaded.id)) throw pluginError('duplicate_presentation_id', loaded.id);
+    staged.presentations.set(loaded.id, loaded);
   }
 
   for (const value of contributionArray(plugin, 'imports', manifest.id)) {

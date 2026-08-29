@@ -22,7 +22,7 @@ module.exports = [
     }
   },
   {
-    files: ['public/js/api.js', 'public/js/auth.js', 'public/js/dom.js', 'public/js/main.js', 'public/js/offline-ui.js', 'public/js/import/**/*.js', 'public/js/views/**/*.js'],
+    files: ['public/js/api.js', 'public/js/auth.js', 'public/js/dom.js', 'public/js/main.js', 'public/js/offline-ui.js', 'public/js/presentation.js', 'public/js/import/**/*.js', 'public/js/views/**/*.js'],
     languageOptions: {
       sourceType: 'module',
       globals: { ...globals.browser, OfflineStore: 'readonly', OfflineSync: 'readonly' }

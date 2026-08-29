@@ -13,6 +13,7 @@ const { deepFreeze, pluginError } = require('./contracts');
  *   connectors: Map<string, LoadedSourceConnector>,
  *   transforms: Map<string, import('techsitemanager/plugin-api').NamedTransform>,
  *   profiles: Map<string, import('techsitemanager/plugin-api').ImportProfile>,
+ *   presentations: Map<string, import('techsitemanager/plugin-api').PresentationProfile>,
  *   exporters: Map<string, LoadedExporter>
  * }} RegistryState
  */
@@ -30,7 +31,7 @@ function exporterDescriptor(exporter) {
 
 /** @returns {RegistryState} */
 function emptyState() {
-  return { plugins: new Map(), providers: new Map(), connectors: new Map(), transforms: new Map(), profiles: new Map(), exporters: new Map() };
+  return { plugins: new Map(), providers: new Map(), connectors: new Map(), transforms: new Map(), profiles: new Map(), presentations: new Map(), exporters: new Map() };
 }
 
 /** @template T @param {Map<string, T>} target @param {Map<string, T>} staged @param {RegistryStateKey} key */
@@ -50,12 +51,17 @@ function merge(target, staged) {
   assertNoDuplicates(target.connectors, staged.connectors, 'connectors');
   assertNoDuplicates(target.transforms, staged.transforms, 'transforms');
   assertNoDuplicates(target.profiles, staged.profiles, 'profiles');
+  assertNoDuplicates(target.presentations, staged.presentations, 'presentations');
+  for (const presentation of staged.presentations.values()) {
+    if ([...target.presentations.values()].some((current) => current.entityType === presentation.entityType) || [...staged.presentations.values()].some((current) => current !== presentation && current.entityType === presentation.entityType)) throw pluginError('duplicate_presentation_entity', presentation.entityType);
+  }
   assertNoDuplicates(target.exporters, staged.exporters, 'exporters');
   appendMap(target.plugins, staged.plugins);
   appendMap(target.providers, staged.providers);
   appendMap(target.connectors, staged.connectors);
   appendMap(target.transforms, staged.transforms);
   appendMap(target.profiles, staged.profiles);
+  appendMap(target.presentations, staged.presentations);
   appendMap(target.exporters, staged.exporters);
 }
 
@@ -63,14 +69,17 @@ function merge(target, staged) {
 function frozenRegistry(state, degraded) {
   const providers = Object.freeze([...state.providers.values()].map(descriptor));
   const exporters = Object.freeze([...state.exporters.values()].map(exporterDescriptor));
+  const presentations = Object.freeze([...state.presentations.values()]);
   return Object.freeze({
-    providers, exporters,
+    providers, exporters, presentations,
     degraded: Object.freeze([...degraded]),
     provider(/** @type {string} */ id) { return state.providers.get(id); },
     connector(/** @type {string} */ id) { return state.connectors.get(id); },
     exporter(/** @type {string} */ id) { return state.exporters.get(id); },
     transform(/** @type {string} */ id) { return state.transforms.get(id); },
     profile(/** @type {string} */ id) { return state.profiles.get(id); },
+    presentation(/** @type {string} */ id) { return state.presentations.get(id); },
+    presentationFor(/** @type {string} */ entityType) { return [...state.presentations.values()].find((entry) => entry.entityType === entityType); },
     plugin(/** @type {string} */ id) { return state.plugins.get(id); }
   });
 }

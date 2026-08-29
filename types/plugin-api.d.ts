@@ -1,7 +1,7 @@
 import type { ImportDraft, SourceArtifact } from './import-contracts';
 
 export interface PluginManifest {
-  readonly apiVersion: 1;
+  readonly apiVersion: 1 | 2;
   readonly id: string;
   readonly version: string;
   readonly coreCompatibility: string;
@@ -137,6 +137,85 @@ export interface YamlProfileReference {
 
 export type YAMLProfileReference = YamlProfileReference;
 
+export type PresentationEntityType =
+  | 'work-package'
+  | 'work-item'
+  | 'circuit'
+  | 'segment'
+  | 'consumable-requirement';
+
+export type PresentationComponent =
+  | 'record-form'
+  | 'child-record-tabs'
+  | 'connection-schedule'
+  | 'requirement-table'
+  | 'material-summary';
+
+export type PresentationFieldType =
+  | 'string'
+  | 'multiline'
+  | 'date'
+  | 'integer'
+  | 'decimal'
+  | 'boolean'
+  | 'enum';
+
+export interface PresentationField {
+  readonly id: string;
+  readonly entityType: PresentationEntityType;
+  readonly binding: `core.${string}` | `extension.${string}`;
+  readonly label: string;
+  readonly type: PresentationFieldType;
+  readonly required: boolean;
+  readonly wide: boolean;
+  readonly maxLength: number;
+  readonly options: readonly string[];
+}
+
+export interface PresentationSection {
+  readonly id: string;
+  readonly label: string;
+  readonly hint: string;
+  readonly fields: readonly string[];
+}
+
+export interface PresentationView {
+  readonly id: string;
+  readonly label: string;
+  readonly icon: string;
+  readonly component: PresentationComponent;
+  readonly title: string;
+  readonly description: string;
+  readonly emptyTitle: string;
+  readonly emptyDescription: string;
+  readonly media: readonly string[];
+  readonly sections: readonly PresentationSection[];
+  readonly fields: readonly string[];
+  readonly circuitFields: readonly string[];
+  readonly segmentFields: readonly string[];
+}
+
+export interface PresentationProfile {
+  readonly schemaVersion: 'techsitemanager.io/presentation-profile/v1';
+  readonly id: string;
+  readonly entityType: 'work-package';
+  readonly pluginId: string;
+  readonly hash?: `sha256:${string}`;
+  readonly terms: {
+    readonly singular: string;
+    readonly plural: string;
+    readonly childSingular: string;
+    readonly childPlural: string;
+  };
+  readonly fields: readonly PresentationField[];
+  readonly views: readonly PresentationView[];
+}
+
+export interface PresentationProfileReference {
+  readonly id: string;
+  readonly file: string;
+}
+
 export interface ExportWorkItem {
   readonly publicId: string;
   readonly itemReference: string;
@@ -145,6 +224,7 @@ export interface ExportWorkItem {
   readonly status: string;
   readonly sequence: number;
   readonly version: number;
+  readonly extensions: Readonly<Record<string, { readonly value: unknown; readonly version: number }>>;
 }
 
 export interface ExportSegment {
@@ -156,6 +236,7 @@ export interface ExportSegment {
   readonly lengthMetres: number | null;
   readonly notes: string;
   readonly version: number;
+  readonly extensions: Readonly<Record<string, { readonly value: unknown; readonly version: number }>>;
 }
 
 export interface ExportCircuit {
@@ -165,6 +246,7 @@ export interface ExportCircuit {
   readonly media: string;
   readonly status: string;
   readonly version: number;
+  readonly extensions: Readonly<Record<string, { readonly value: unknown; readonly version: number }>>;
   readonly segments: readonly ExportSegment[];
 }
 
@@ -175,6 +257,7 @@ export interface ExportConsumableRequirement {
   readonly quantityRequired: number;
   readonly unit: string | null;
   readonly version: number;
+  readonly extensions: Readonly<Record<string, { readonly value: unknown; readonly version: number }>>;
 }
 
 export interface WorkPackageProjection {
@@ -189,6 +272,7 @@ export interface WorkPackageProjection {
   readonly leadAssignee: string | null;
   readonly assignees: readonly string[];
   readonly version: number;
+  readonly extensions: Readonly<Record<string, { readonly value: unknown; readonly version: number }>>;
   readonly workItems: readonly ExportWorkItem[];
   readonly circuits: readonly ExportCircuit[];
   readonly consumableRequirements: readonly ExportConsumableRequirement[];
@@ -221,6 +305,8 @@ export interface PluginPackage {
   readonly connectors?: readonly SourceConnector[];
   readonly transforms?: Readonly<Record<string, NamedTransform>>;
   readonly profiles?: readonly YAMLProfileReference[];
+  /** Plugin API V2 only. Data is loaded and strictly validated by core. */
+  readonly presentations?: readonly PresentationProfileReference[];
   readonly exporters?: readonly Exporter[];
 }
 
@@ -258,11 +344,14 @@ export interface LoadedPlugin extends PluginManifest {
 export interface PluginRegistry {
   readonly providers: readonly ProviderDescriptor[];
   readonly exporters: readonly ExporterDescriptor[];
+  readonly presentations: readonly PresentationProfile[];
   readonly degraded: readonly { readonly package: string; readonly code: string }[];
   provider(id: string): LoadedImportProvider | undefined;
   connector(id: string): LoadedSourceConnector | undefined;
   exporter(id: string): LoadedExporter | undefined;
   transform(id: string): NamedTransform | undefined;
   profile(id: string): ImportProfile | undefined;
+  presentation(id: string): PresentationProfile | undefined;
+  presentationFor(entityType: string): PresentationProfile | undefined;
   plugin(id: string): LoadedPlugin | undefined;
 }

@@ -1,6 +1,6 @@
 # Plugins
 
-Plugin API major 1 is deliberately small. Deployments list exact installed
+Plugin API major 2 extends the deliberately small V1 boundary. Deployments list exact installed
 package names in a JSON configuration file; an omitted configuration means no
 plugins. Core never scans directories or downloads packages at runtime.
 
@@ -10,8 +10,22 @@ package name/version, manifest version, and core compatibility range must all
 agree before any contribution is published.
 
 Supported contributions are import providers, source connectors, named
-transforms, validated YAML profiles, and bounded exporters. Plugin IDs and
-contribution IDs are durable lowercase namespaced identifiers.
+transforms, validated YAML import profiles, validated data-only presentation
+profiles, and bounded exporters. Plugin IDs and contribution IDs are durable
+lowercase namespaced identifiers. Compatible V1 packages remain loadable but
+cannot contribute presentations or extension fields.
+
+Presentation profiles select only core-defined renderers such as record forms,
+tabbed child records, filtered connection schedules, requirement tables, and
+material summaries. They provide private nouns, labels, section order, filters,
+and field bindings. A binding is either an allowlisted core field or an
+`extension.<plugin-id>.<field-id>` value owned by that same plugin. Profiles
+cannot supply JavaScript, HTML, CSS, SQL, URLs, routes, or database schemas.
+
+Extension values are stored by core in a generic namespaced table. Core owns
+their runtime type validation, authorization, optimistic versions, audit,
+backup, import reconciliation, and cleanup. Removing a plugin hides its
+presentation but does not reinterpret or silently delete retained values.
 
 Required plugin failure prevents startup. Optional plugin failure omits that
 plugin atomically and reports degraded readiness with a sanitized reason code.
@@ -35,7 +49,7 @@ retain their own licences and attribution requirements.
 
 ## Type contract kit
 
-Plugin API V1 declarations are published in `types/plugin-api.d.ts` and the
+Plugin API V2 declarations are published in `types/plugin-api.d.ts` and the
 normalized import/reconciliation declarations are in
 `types/import-contracts.d.ts`. The root package remains `private: true`; these
 paths document and check the source contract without publishing an npm package

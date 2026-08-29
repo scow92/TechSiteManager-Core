@@ -1,6 +1,6 @@
 {
   "name": "techsitemanager",
-  "version": "1.0.0-rc.1",
+  "version": "1.1.0-rc.1",
   "private": true,
   "license": "Apache-2.0",
   "description": "Generic planning and record management for structured-cabling work",

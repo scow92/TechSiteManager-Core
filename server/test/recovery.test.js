@@ -25,9 +25,9 @@ test('fresh generic baseline installs with integrity and no legacy migration his
   assert.equal((await db.raw('PRAGMA integrity_check'))[0].integrity_check, 'ok');
   assert.deepEqual(await db.raw('PRAGMA foreign_key_check'), []);
   const migrations = await db('knex_migrations').select('name');
-  assert.deepEqual(migrations.map((row) => row.name), ['0001_generic_baseline.js']);
+  assert.deepEqual(migrations.map((row) => row.name), ['0001_generic_baseline.js', '0002_plugin_api_v2_extensions.js']);
   const tables = (await db.raw("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).map((row) => row.name);
-  for (const expected of ['sites', 'rooms', 'racks', 'termination_points', 'devices', 'work_packages', 'work_items', 'circuits', 'segments', 'import_sources', 'import_runs', 'import_entity_links', 'import_field_ownership', 'import_drafts']) assert.ok(tables.includes(expected));
+  for (const expected of ['sites', 'rooms', 'racks', 'termination_points', 'devices', 'work_packages', 'work_items', 'circuits', 'segments', 'extension_values', 'import_sources', 'import_runs', 'import_entity_links', 'import_field_ownership', 'import_drafts']) assert.ok(tables.includes(expected));
 });
 
 test('database constraints defend roles, statuses, quantities, and foreign keys', async () => {

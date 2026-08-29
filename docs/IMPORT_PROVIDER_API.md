@@ -1,4 +1,4 @@
-# Import Provider API V1
+# Import Provider API
 
 A provider converts one bounded transient `SourceArtifact` into a normalized
 `ImportDraft`. Core owns validation, preview, reconciliation, authorization,
@@ -41,6 +41,14 @@ Approval accepts decisions only for fields and absences present in that exact
 proposal. Unknown decisions, malformed maps, unknown warning
 acknowledgements, a changed draft hash, or changed target versions are rejected
 before persistence.
+
+Plugin API V2 providers may return `techsitemanager.io/import-draft/v2` and a
+validated `presentationId`. Each normalized entity may then include an
+`extensions` map keyed by field IDs declared by that plugin's presentation.
+Core resolves those IDs to plugin-scoped bindings, validates their types and
+bounds, includes them in preview and ownership decisions, and persists them in
+the same import transaction. V1 drafts remain supported and cannot select a
+presentation or provide extension fields.
 
 Public TypeScript declarations for these shapes are available at
 `types/import-contracts.d.ts`. They describe valid provider output and core

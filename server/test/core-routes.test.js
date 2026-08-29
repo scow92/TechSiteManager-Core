@@ -166,6 +166,8 @@ test('generic work package persists nested records and is searchable without plu
   } });
   assert.equal(created.response.status, 201); workPackage = created.data;
   assert.equal(workPackage.workItems.length, 1); assert.equal(workPackage.circuits[0].segments.length, 1);
+  const summary = (await request('/api/work-packages')).data.find((entry) => entry.publicId === workPackage.publicId);
+  assert.equal(summary.sitePublicId, site.publicId);
   for (const term of ['PKG-ROUTE-200', 'EXT-SEARCH-200', 'ITEM-SEARCH-1', 'PROJECT-COMET', 'LAB-ROUTE-01', 'Searchable generic']) {
     const search = await request(`/api/search?q=${encodeURIComponent(term)}`);
     assert.equal(search.response.status, 200, term); assert.equal(search.data[0].publicId, workPackage.publicId, term);

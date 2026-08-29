@@ -2,6 +2,7 @@
 
 const db = require('../db/knex');
 const { httpError } = require('./errors');
+const extensionValues = require('../plugins/extension-values');
 
 /** @typedef {{ id: number, public_id: string, version: number }} DbRow */
 /** @typedef {DbRow & { site_public_id: string, site_code: string, site_name: string, package_ref: string, external_reference: string | null, project_reference: string | null, title: string, description: string, status: string, lead_assignee: string | null, assignees_json: string }} WorkPackageRow */
@@ -26,6 +27,8 @@ async function packageDetail(publicId, trx = db) {
   for (const circuit of circuits) circuit.segments = /** @type {SegmentRow[]} */ (await trx('segments').where({ circuit_id: circuit.id }).orderBy(['sequence', 'id']));
   /** @type {RequirementRow[]} */
   const requirements = await trx('consumable_requirements as r').leftJoin('consumable_catalogue as c', 'c.id', 'r.catalogue_id').where({ 'r.work_package_id': pack.id }).select('r.*', 'c.public_id as catalogue_public_id').orderBy('r.id');
+  const publicIds = [pack.public_id, ...workItems.map((row) => row.public_id), ...circuits.flatMap((row) => [row.public_id, ...row.segments.map((segment) => segment.public_id)]), ...requirements.map((row) => row.public_id)];
+  const extensions = await extensionValues.valuesFor(publicIds, trx);
   /** @type {unknown} */
   const parsedAssignees = JSON.parse(pack.assignees_json);
   if (!Array.isArray(parsedAssignees) || parsedAssignees.some((entry) => typeof entry !== 'string')) throw new Error('invalid_assignees_json');
@@ -33,10 +36,10 @@ async function packageDetail(publicId, trx = db) {
     publicId: pack.public_id, site: { publicId: pack.site_public_id, code: pack.site_code, name: pack.site_name },
     packageReference: pack.package_ref, externalReference: pack.external_reference, projectReference: pack.project_reference,
     title: pack.title, description: pack.description, status: pack.status, leadAssignee: pack.lead_assignee,
-    assignees: parsedAssignees, version: pack.version,
-    workItems: workItems.map((row) => ({ publicId: row.public_id, itemReference: row.item_reference, title: row.title, description: row.description, status: row.status, sequence: row.sequence, version: row.version })),
-    circuits: circuits.map((row) => ({ publicId: row.public_id, circuitReference: row.circuit_reference, description: row.description, media: row.media, status: row.status, version: row.version, segments: row.segments.map((segment) => ({ publicId: segment.public_id, segmentReference: segment.segment_reference, sequence: segment.sequence, fromEndpoint: segment.from_endpoint, toEndpoint: segment.to_endpoint, lengthMetres: segment.length_metres, notes: segment.notes, version: segment.version })) })),
-    consumableRequirements: requirements.map((row) => ({ publicId: row.public_id, cataloguePublicId: row.catalogue_public_id || null, description: row.description, quantityRequired: row.quantity_required, unit: row.unit, version: row.version }))
+    assignees: parsedAssignees, version: pack.version, extensions: extensions.get(pack.public_id) || {},
+    workItems: workItems.map((row) => ({ publicId: row.public_id, itemReference: row.item_reference, title: row.title, description: row.description, status: row.status, sequence: row.sequence, version: row.version, extensions: extensions.get(row.public_id) || {} })),
+    circuits: circuits.map((row) => ({ publicId: row.public_id, circuitReference: row.circuit_reference, description: row.description, media: row.media, status: row.status, version: row.version, extensions: extensions.get(row.public_id) || {}, segments: row.segments.map((segment) => ({ publicId: segment.public_id, segmentReference: segment.segment_reference, sequence: segment.sequence, fromEndpoint: segment.from_endpoint, toEndpoint: segment.to_endpoint, lengthMetres: segment.length_metres, notes: segment.notes, version: segment.version, extensions: extensions.get(segment.public_id) || {} })) })),
+    consumableRequirements: requirements.map((row) => ({ publicId: row.public_id, cataloguePublicId: row.catalogue_public_id || null, description: row.description, quantityRequired: row.quantity_required, unit: row.unit, version: row.version, extensions: extensions.get(row.public_id) || {} }))
   };
 }
 

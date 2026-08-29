@@ -126,8 +126,9 @@ module.exports = async function transform(artifact, context) {
   const defaultStatus = typeof profile.defaults?.status === 'string' ? profile.defaults.status : 'planned';
   const categoryMap = profile.categoryMap || {};
   return {
-    schemaVersion: 'techsitemanager.io/import-draft/v1',
+    schemaVersion: 'techsitemanager.io/import-draft/v2',
     providerId: 'example.fictional-facility.json',
+    presentationId: 'example.fictional-facility.presentation-v1',
     source: { externalSourceId: String(source.sourceId), sourceVersion: source.revision === undefined ? null : String(source.revision) },
     target: { siteCode: normalize(source.site.code), siteName: normalize(source.site.name) },
     workPackage: {
@@ -140,6 +141,7 @@ module.exports = async function transform(artifact, context) {
         description: managed(String(source.package.description || ''), policy('description', 'user-owned')),
         status: managed(source.package.status || defaultStatus, policy('status', 'source-default'))
       },
+      extensions: { 'zone-code': managed(String(normalize(source.site.code)), 'source-owned') },
       workItems: (source.items || []).map((item, index) => ({
         sourceRecordKey: `item:${item.id}`,
         sequenceHint: index,
@@ -172,7 +174,8 @@ module.exports = async function transform(artifact, context) {
           },
           segments: /** @type {[typeof segments[number], ...typeof segments]} */ (segments)
         };
-      })
+      }),
+      consumableRequirements: []
     },
     warnings: []
   };

@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 const { loadPlugins } = require('../plugins/loader');
 const { parseProfile } = require('../plugins/profiles');
+const { parsePresentation } = require('../plugins/presentations');
 
 function temporaryRoot() { return fs.mkdtempSync(path.join(os.tmpdir(), 'tsm-plugin-test-')); }
 function writeJson(file, value) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value, null, 2)); }
@@ -33,6 +34,8 @@ test('fictional plugin registers one validated provider and profile', () => {
   const registry = loadPlugins({ configFile: path.join(root, 'config', 'fictional-plugin.json'), searchRoot: root });
   assert.deepEqual(registry.providers.map((entry) => entry.id), ['example.fictional-facility.json']);
   assert.deepEqual(registry.exporters.map((entry) => entry.id), ['example.fictional-facility.summary']);
+  assert.deepEqual(registry.presentations.map((entry) => entry.id), ['example.fictional-facility.presentation-v1']);
+  assert.equal(registry.presentationFor('work-package').terms.singular, 'Facility plan');
   assert.equal(registry.profile('example.facility-json-v1').schemaVersion, 'techsitemanager.io/import-profile/v1');
   assert.match(registry.profile('example.facility-json-v1').hash, /^sha256:[a-f0-9]{64}$/);
   assert.ok(Object.isFrozen(registry.provider('example.fictional-facility.json').input));
@@ -133,4 +136,12 @@ test('valid profile supports data mappings, ownership, identity, and registered 
   const profile = parseProfile('schemaVersion: techsitemanager.io/import-profile/v1\nid: fixture.profile\naliases:\n  room: suite\ndefaults:\n  status: planned\nfieldOwnership:\n  title: source-owned\nidentity:\n  source: sourceId\ntransforms: [fixture.transform]\n', new Map([['fixture.transform', () => {}]]));
   assert.equal(profile.fieldOwnership.title, 'source-owned');
   assert.ok(Object.isFrozen(profile));
+});
+
+test('presentation profiles reject executable data, foreign namespaces, and unknown components', () => {
+  const base = 'schemaVersion: techsitemanager.io/presentation-profile/v1\nid: fixture.presentation\nentityType: work-package\nterms: { singular: Plan, plural: Plans, childSingular: Task, childPlural: Tasks }\nfields:\n  - { id: title, entityType: work-package, binding: core.title, label: Title, type: string }\nviews:\n  - { id: details, label: Details, component: record-form, sections: [{ id: main, label: Main, fields: [title] }] }\n';
+  assert.equal(parsePresentation(base, 'fixture.plugin').views[0].component, 'record-form');
+  assert.throws(() => parsePresentation(base.replace('core.title', 'extension.other.plugin.field'), 'fixture.plugin'), { code: 'presentation_binding_scope_invalid' });
+  assert.throws(() => parsePresentation(base.replace('record-form', 'browser-script'), 'fixture.plugin'), { code: 'presentation_component_invalid' });
+  assert.throws(() => parsePresentation(base.replace('label: Title', 'label: "${run()}"'), 'fixture.plugin'), { code: 'presentation_forbidden_value' });
 });

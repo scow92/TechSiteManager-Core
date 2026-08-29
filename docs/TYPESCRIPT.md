@@ -2,7 +2,7 @@
 
 TypeScript is a development and CI tool for the existing JavaScript runtime.
 `npm run typecheck` uses strict, no-emit checking; application startup remains
-`node server/server.js`, and Plugin API V1 remains CommonJS-compatible.
+`node server/server.js`, and Plugin API V2 remains CommonJS-compatible.
 
 The checked scope expands in reviewable stages instead of hiding diagnostics
 with broad exclusions or relaxed compiler settings:

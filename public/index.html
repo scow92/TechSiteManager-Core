@@ -15,26 +15,42 @@
       <div class="brand-row">
         <a class="brand" href="#home" aria-label="Home">
           <span class="brand-mark" aria-hidden="true"></span>
-          <span><strong>TechSiteManager</strong><small id="brand-context">Planning and records</small></span>
+          <span><strong>TechSiteManager</strong><small id="brand-context">No site</small></span>
         </a>
         <button id="nav-collapse" class="icon-button nav-collapse" type="button" aria-label="Minimize navigation">«</button>
       </div>
+      <div id="context" class="context" hidden>
+        <label class="ctx-field"><span class="ctx-label">Site <a href="#sites">manage</a></span><select id="site-context" aria-label="Site context"><option value="">Select site…</option></select></label>
+        <label class="ctx-field"><span id="package-context-label" class="ctx-label">Work package</span><select id="package-context" aria-label="Work package context"><option value="">Select work package…</option></select></label>
+      </div>
       <nav id="nav" class="nav" hidden>
-        <p class="nav-label">Workspace</p>
-        <a class="nav-item" href="#home" data-route="home"><span aria-hidden="true">⌂</span>Work Packages</a>
-        <a class="nav-item" href="#sites" data-route="sites"><span aria-hidden="true">▤</span>Sites</a>
-        <a class="nav-item" href="#import" data-route="import"><span aria-hidden="true">⇥</span>Import</a>
+        <a class="nav-item" href="#home" data-route="home"><span aria-hidden="true">⌂</span>Home</a>
+        <div id="site-nav" class="nav-section" hidden>
+          <p class="nav-label">Site</p>
+          <a class="nav-item" data-site-view="overview"><span aria-hidden="true">▤</span>Overview</a>
+          <a class="nav-item" data-site-view="rooms"><span aria-hidden="true">▣</span>Rooms</a>
+          <a class="nav-item" data-site-view="racks"><span aria-hidden="true">▦</span>Racks</a>
+          <a class="nav-item" data-site-view="termination-points"><span aria-hidden="true">▥</span>Termination points</a>
+          <a class="nav-item" data-site-view="devices"><span aria-hidden="true">▣</span>Devices</a>
+          <a class="nav-item" data-site-view="distances"><span aria-hidden="true">↔</span>Distances</a>
+        </div>
+        <div id="package-nav" class="nav-section" hidden>
+          <p class="nav-label">Work package</p>
+          <a class="nav-item" data-package-view="details"><span aria-hidden="true">▤</span>Details</a>
+          <a class="nav-item" data-package-view="work-items"><span aria-hidden="true">▥</span>Work items</a>
+          <a class="nav-item" href="#import" data-route="import"><span aria-hidden="true">▩</span>Import</a>
+          <p class="nav-label">Connections</p>
+          <a class="nav-item nav-sub" data-package-view="connections"><span aria-hidden="true">◉</span>Circuits</a>
+          <a class="nav-item" data-package-view="consumables"><span aria-hidden="true">▣</span>Consumables</a>
+        </div>
         <div class="nav-spacer"></div>
-        <p class="nav-label">Application</p>
-        <a class="nav-item" href="#settings" data-route="settings"><span aria-hidden="true">⚙</span>Settings</a>
       </nav>
+      <div class="nav-bottom"><a class="nav-item" href="#settings" data-route="settings"><span aria-hidden="true">⚙</span>Settings</a></div>
       <footer class="sidebar-footer">
         <p id="connection-status" class="connection-status" role="status">Online</p>
-        <div class="sidebar-tools">
-          <button id="theme-toggle" class="button-ghost" type="button">Theme: system</button>
-          <button id="logout" class="button-ghost" type="button">Sign out</button>
-        </div>
+        <button id="theme-toggle" class="button-ghost" type="button">Theme: system</button>
         <p id="user-summary" class="user-summary"></p>
+        <button id="logout" class="button secondary button-block" type="button">Sign out</button>
       </footer>
     </aside>
     <button id="nav-scrim" class="nav-scrim" type="button" aria-label="Close navigation"></button>

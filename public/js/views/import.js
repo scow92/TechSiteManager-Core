@@ -5,8 +5,48 @@ import { approvalFromPreview, reconciliationPreview } from '../import/reconcilia
 
 /** @typedef {import('../../../server/types/browser-models').ProviderDescriptor} ProviderDescriptor */
 /** @typedef {import('../../../server/types/browser-models').ReconciliationProposal} ReconciliationProposal */
+/** @typedef {import('../../../server/types/browser-models').ImportResult} ImportResult */
+/** @typedef {import('../../../server/types/browser-models').WorkPackage} WorkPackage */
 
-export async function importView() {
+/** @param {ImportResult} result */
+async function appliedResult(result) {
+  const heading = result.status === 'applied' ? 'Import applied' : 'Import complete';
+  const presentation = /** @type {import('../../../server/types/browser-models').PresentationProfile | null} */ (await api('/presentation-profiles/work-package'));
+  const terms = presentation?.terms || { singular: 'Work package', plural: 'Work packages' };
+  const initialView = presentation?.views[0]?.id || 'details';
+  if (!result.workPackagePublicId) {
+    return el('div', { class: 'panel stack import-result' }, el('h2', {}, heading),
+      el('p', { class: 'error' }, `The import completed without a ${terms.singular.toLowerCase()} target. Return to ${terms.plural} and confirm the record before continuing.`),
+      el('div', { class: 'form-actions' }, el('a', { class: 'button secondary', href: '#home' }, `Return to ${terms.plural}`)));
+  }
+
+  const publicId = result.workPackagePublicId;
+  try {
+    const [pack] = await Promise.all([
+      /** @type {Promise<WorkPackage>} */ (api(`/work-packages/${encodeURIComponent(publicId)}`)),
+      api('/work-packages')
+    ]);
+    const counts = result.counts;
+    const summary = [
+      `${counts.created} created`, `${counts.updated} updated`, `${counts.unchanged} unchanged`,
+      `${counts.absent} absent`, `${counts.conflicted} conflicted`
+    ].join(' · ');
+    return el('div', { class: 'panel stack import-result' },
+      el('div', { class: 'section-head' }, el('div', {}, el('p', { class: 'eyebrow' }, 'Import result'), el('h2', {}, heading)), el('span', { class: 'badge', 'data-status': pack.status }, pack.status)),
+      el('div', { class: 'result-record' }, el('strong', {}, pack.packageReference), el('span', {}, pack.title), el('span', { class: 'muted' }, `${pack.site.code} — ${pack.site.name}`)),
+      el('p', { class: 'muted' }, summary),
+      el('div', { class: 'form-actions' },
+        el('a', { class: 'button', href: `#package/${encodeURIComponent(publicId)}/${initialView}` }, `Open ${terms.singular.toLowerCase()}`),
+        el('a', { class: 'button secondary', href: '#home' }, `Return to ${terms.plural}`)));
+  } catch (error) {
+    return el('div', { class: 'panel stack import-result' }, el('h2', {}, heading),
+      el('p', { class: 'error' }, `The imported ${terms.singular.toLowerCase()} is not currently available: ${errorMessage(error)}`),
+      el('div', { class: 'form-actions' }, el('a', { class: 'button secondary', href: '#home' }, `Return to ${terms.plural}`)));
+  }
+}
+
+/** @param {string} [initialProviderId] */
+export async function importView(initialProviderId) {
   const providers = /** @type {ProviderDescriptor[]} */ (await api('/import-providers'));
   if (!providers.length) {
     app.replaceChildren(el('section', { class: 'stack' }, pageHead('Import', 'Review source data before applying it to core records.'),
@@ -14,6 +54,7 @@ export async function importView() {
     return;
   }
   const select = el('select', { name: 'provider' }, ...providers.map((provider) => el('option', { value: provider.id }, provider.label)));
+  if (initialProviderId && providers.some((provider) => provider.id === initialProviderId)) select.value = initialProviderId;
   const dynamic = el('div', { class: 'stack' });
   const preview = el('aside', { class: 'preview-panel' }, el('div', { class: 'empty-state' }, el('span', { class: 'empty-icon', 'aria-hidden': 'true' }, '⇥'), el('h2', {}, 'Preview'), el('p', {}, 'Choose a provider and validate the source to review proposed changes.')));
   const form = el('form', { class: 'panel stack' },
@@ -51,9 +92,16 @@ export async function importView() {
       const apply = el('button', { type: 'button' }, 'Approve import');
       apply.addEventListener('click', async () => {
         try {
-          const result = await api(`/import-drafts/${proposal.draftId}/apply`, { method: 'POST', body: approvalFromPreview(proposal, reconciliation) });
-          preview.replaceChildren(el('div', { class: 'panel' }, el('h2', {}, 'Import applied'), el('pre', {}, JSON.stringify(result, null, 2))));
-        } catch (error) { notify(errorMessage(error)); }
+          apply.disabled = true;
+          apply.textContent = 'Applying…';
+          const result = /** @type {ImportResult} */ (await api(`/import-drafts/${proposal.draftId}/apply`, { method: 'POST', body: approvalFromPreview(proposal, reconciliation) }));
+          preview.replaceChildren(await appliedResult(result));
+          notify('Import applied');
+        } catch (error) {
+          apply.disabled = false;
+          apply.textContent = 'Approve import';
+          notify(errorMessage(error));
+        }
       });
       preview.replaceChildren(el('div', { class: 'panel stack' }, el('div', { class: 'section-head' }, el('h2', {}, 'Normalized preview')), reconciliation, apply));
     } catch (error) { preview.replaceChildren(el('div', { class: 'panel' }, el('p', { class: 'error' }, errorMessage(error)))); }

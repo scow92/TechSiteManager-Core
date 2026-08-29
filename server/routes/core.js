@@ -193,8 +193,8 @@ router.put('/sites/:sitePublicId/:kind/:publicId', auth.requireWrite, async (req
 
 router.get('/work-packages', async (_req, res, next) => {
   try {
-    const rows = await db('work_packages as w').join('sites as s', 's.id', 'w.site_id').select('w.public_id', 'w.package_ref', 'w.external_reference', 'w.project_reference', 'w.title', 'w.description', 'w.status', 'w.version', 's.code as site_code', 's.name as site_name').orderBy('w.updated_at', 'desc');
-    res.json(rows.map((row) => ({ publicId: row.public_id, packageReference: row.package_ref, externalReference: row.external_reference, projectReference: row.project_reference, title: row.title, description: row.description, status: row.status, version: row.version, siteCode: row.site_code, siteName: row.site_name })));
+    const rows = await db('work_packages as w').join('sites as s', 's.id', 'w.site_id').select('w.public_id', 'w.package_ref', 'w.external_reference', 'w.project_reference', 'w.title', 'w.description', 'w.status', 'w.version', 's.public_id as site_public_id', 's.code as site_code', 's.name as site_name').orderBy('w.updated_at', 'desc');
+    res.json(rows.map((row) => ({ publicId: row.public_id, packageReference: row.package_ref, externalReference: row.external_reference, projectReference: row.project_reference, title: row.title, description: row.description, status: row.status, version: row.version, sitePublicId: row.site_public_id, siteCode: row.site_code, siteName: row.site_name })));
   } catch (error) { next(error); }
 });
 

@@ -1,11 +1,11 @@
-/** Plugin API V1 field ownership policy. Runtime validation remains authoritative. */
+/** Plugin import field ownership policy. Runtime validation remains authoritative. */
 export type FieldOwnershipPolicy =
   | 'source-owned'
   | 'user-owned'
   | 'source-default'
   | 'review-required';
 
-export interface ManagedValue<T extends string | number | null = string | number | null> {
+export interface ManagedValue<T extends string | number | boolean | null = string | number | boolean | null> {
   readonly value: T;
   readonly ownership: FieldOwnershipPolicy;
 }
@@ -64,29 +64,43 @@ export interface WorkItemDraft {
   readonly sourceRecordKey: string;
   readonly sequenceHint?: number | null;
   readonly fields: WorkItemFields;
+  readonly extensions?: Readonly<Record<string, ManagedValue>>;
 }
 
 export interface SegmentDraft {
   readonly sourceRecordKey: string;
   readonly fields: SegmentFields;
+  readonly extensions?: Readonly<Record<string, ManagedValue>>;
 }
 
 export interface CircuitDraft {
   readonly sourceRecordKey: string;
   readonly fields: CircuitFields;
+  readonly extensions?: Readonly<Record<string, ManagedValue>>;
   readonly segments: readonly [SegmentDraft, ...SegmentDraft[]];
 }
 
 export interface WorkPackageDraft {
   readonly sourceRecordKey: string;
   readonly fields: WorkPackageFields;
+  readonly extensions?: Readonly<Record<string, ManagedValue>>;
   readonly workItems?: readonly WorkItemDraft[];
   readonly connections?: readonly CircuitDraft[];
+  readonly consumableRequirements?: readonly {
+    readonly sourceRecordKey: string;
+    readonly fields: {
+      readonly description: ManagedValue<string>;
+      readonly quantityRequired: ManagedValue<number>;
+      readonly unit: ManagedValue<string>;
+    };
+    readonly extensions?: Readonly<Record<string, ManagedValue>>;
+  }[];
 }
 
 export interface ImportDraft {
-  readonly schemaVersion: 'techsitemanager.io/import-draft/v1';
+  readonly schemaVersion: 'techsitemanager.io/import-draft/v1' | 'techsitemanager.io/import-draft/v2';
   readonly providerId: string;
+  readonly presentationId?: string;
   readonly source: {
     readonly externalSourceId: string;
     readonly sourceVersion?: string | null;
@@ -101,9 +115,10 @@ export interface ImportDraft {
 
 /** Core-owned normalized form produced only after runtime validation. */
 export interface ValidatedImportDraft {
-  readonly schemaVersion: 'techsitemanager.io/import-draft/v1';
+  readonly schemaVersion: 'techsitemanager.io/import-draft/v1' | 'techsitemanager.io/import-draft/v2';
   readonly providerId: string;
   readonly providerVersion: string;
+  readonly presentationId: string | null;
   readonly profileId: string | null;
   readonly profileHash: `sha256:${string}` | null;
   readonly source: {
@@ -129,6 +144,10 @@ export interface ValidatedImportDraft {
         readonly fields: Readonly<Record<string, ManagedValue>>;
       }[];
     }[];
+    readonly consumableRequirements: readonly {
+      readonly sourceRecordKey: string;
+      readonly fields: Readonly<Record<string, ManagedValue>>;
+    }[];
   };
   readonly warnings: readonly Required<SourceWarning>[];
 }
@@ -137,7 +156,8 @@ export type ReconciliationEntityType =
   | 'work_package'
   | 'work_item'
   | 'circuit'
-  | 'segment';
+  | 'segment'
+  | 'consumable_requirement';
 
 export type FieldDecision =
   | 'accept-source'

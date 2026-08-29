@@ -9,11 +9,14 @@ schema reproductions, private migration knowledge, or screenshots/logs that
 contain such material. Reproduce requirements only with clearly fictional
 entities and values.
 
-Plugin API V1 supports only explicitly configured CommonJS import providers,
-source connectors, named transforms, validated YAML profiles, and required
-bounded exporters. Do not add arbitrary routes, browser scripts, migrations,
-schemas, authentication providers, schedules, offline mutations, runtime
-installation, discovery, marketplace behavior, or hot reload.
+Plugin API V2 supports explicitly configured CommonJS import providers, source
+connectors, named transforms, validated YAML import profiles, data-only
+presentation profiles, plugin-scoped typed extension fields, and bounded
+exporters. Core alone owns renderers, routes, validation, persistence,
+authorization, migrations, and offline behavior. Do not add plugin browser
+scripts, arbitrary HTML/CSS, arbitrary routes, plugin migrations or Knex
+access, authentication providers, schedules, runtime installation, discovery,
+marketplace behavior, or hot reload. Continue accepting compatible V1 packages.
 
 Preserve authentication, authorization, origin checks, CSP, safe static-file
 allowlisting, optimistic concurrency, transactional import apply, field

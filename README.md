@@ -18,8 +18,9 @@ terminology and interpretation remain plugin-owned.
 
 ## Status
 
-This source repository is public. Version `1.0.0-rc.1` remains a release
-candidate and Plugin API V1 remains the supported plugin contract.
+This source repository is public. Version `1.1.0-rc.1` is a release candidate.
+Plugin API V2 adds validated data-only presentation profiles and plugin-scoped
+typed extension values while retaining compatible Plugin API V1 packages.
 
 GitHub recorded public visibility on 2026-08-29 at 08:40:53 UTC, while `main`
 pointed at commit `5d98b43f349c8329df71b0c1a603782b0c4ff368`. Making the
@@ -76,10 +77,15 @@ failures remain queued, while permanent rejections are visible and explicitly
 retryable. The server is CommonJS on Express, Knex, and SQLite. One
 intentionally designed migration creates the generic fresh-install schema.
 
-Plugin API V1 is a narrow trusted in-process boundary for import providers,
-source connectors, named transformations, validated YAML profiles, and bounded
-source-specific exporters. Plugins receive no supported Express, Knex, cookie,
-raw-request, or core-write handle. They are trusted code, not sandboxed code.
+Plugin API V2 is a narrow trusted in-process boundary for import providers,
+source connectors, named transformations, validated YAML import and
+presentation profiles, and bounded source-specific exporters. Presentation
+profiles contain data only: core validates the allowed components, bindings,
+labels, field types and bounds, then core-owned browser components render them.
+Plugin-scoped extension values use core-owned validation, persistence,
+authorization, optimistic concurrency, import reconciliation and audit.
+Plugins receive no supported Express, Knex, cookie, raw-request, browser-code,
+or core-write handle. They are trusted code, not sandboxed code.
 
 Configured packages require exact version pins. Provider descriptors are
 rendered by the generic browser shell, and bounded exporters are invoked only

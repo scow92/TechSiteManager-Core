@@ -18,7 +18,8 @@ binary review.
 - generic server: `server/app.js`, `server/config.js`, `server/server.js`,
   `server/knexfile.js`, and generic files below `server/db/`, `server/lib/`,
   `server/routes/`, `server/imports/`, `server/plugins/`, and `server/scripts/`;
-- public-safe tests: JavaScript below `server/test/` using invented data only;
+- public-safe tests below `server/test/` using invented data only, including
+  the compact JSON perceptual signatures used by screenshot regression tests;
 - public TypeScript declarations and compile-time fixtures below `types/`;
 - fictional integration example: `examples/fictional-plugin/`;
 - zero-plugin and fictional-example configuration: `config/`;

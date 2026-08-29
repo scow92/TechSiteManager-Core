@@ -9,8 +9,11 @@ import { sitesView, siteView } from './views/sites.js';
 import { packageView } from './views/work-package.js';
 
 /** @typedef {import('../../server/types/browser-models').User} User */
+/** @typedef {import('../../server/types/browser-models').Site} Site */
+/** @typedef {import('../../server/types/browser-models').WorkPackageSummary} WorkPackageSummary */
 /** @type {User | null} */
 let user = null;
+let packageInitialView = 'details';
 
 /** @param {string} id @returns {HTMLElement} */
 function shellElement(id) {
@@ -26,6 +29,14 @@ const themeToggle = shellElement('theme-toggle');
 const navCollapse = shellElement('nav-collapse');
 const navExpand = shellElement('nav-expand');
 const navScrim = shellElement('nav-scrim');
+const context = shellElement('context');
+const siteNav = shellElement('site-nav');
+const packageNav = shellElement('package-nav');
+const brandContext = shellElement('brand-context');
+const siteContext = /** @type {HTMLSelectElement} */ (shellElement('site-context'));
+const packageContext = /** @type {HTMLSelectElement} */ (shellElement('package-context'));
+const packageContextLabel = shellElement('package-context-label');
+if (!(siteContext instanceof HTMLSelectElement) || !(packageContext instanceof HTMLSelectElement)) throw new Error('Context selectors are invalid');
 
 const themeColours = { dark: '#0f1419', light: '#f2f5f8' };
 function storedTheme() { try { return localStorage.getItem('tsm-theme'); } catch { return null; } }
@@ -59,8 +70,54 @@ function updateConnectionStatus() {
 }
 /** @param {string} route */
 function updateActiveNavigation(route) {
-  const active = route.startsWith('site/') ? 'sites' : route.startsWith('package/') ? 'home' : route;
-  for (const link of nav.querySelectorAll('[data-route]')) link.classList.toggle('active', link.getAttribute('data-route') === active);
+  for (const link of nav.querySelectorAll('.nav-item')) link.classList.remove('active');
+  const [kind, , section] = route.split('/');
+  const selected = kind === 'site' ? nav.querySelector(`[data-site-view="${section || 'overview'}"]`)
+    : kind === 'package' ? nav.querySelector(`[data-package-view="${section || 'details'}"]`)
+      : nav.querySelector(`[data-route="${kind}"]`);
+  if (selected) selected.classList.add('active');
+}
+
+/** @param {import('../../server/types/browser-models').PresentationProfile | null} presentation @param {string} packageId */
+function renderPackageNavigation(presentation, packageId) {
+  const views = presentation?.views || [
+    { id: 'details', label: 'Details', icon: '▤' },
+    { id: 'work-items', label: 'Work items', icon: '▥' },
+    { id: 'connections', label: 'Circuits', icon: '◉' },
+    { id: 'consumables', label: 'Consumables', icon: '▣' }
+  ];
+  packageContextLabel.textContent = presentation?.terms.singular || 'Work package';
+  packageInitialView = views[0]?.id || 'details';
+  packageContext.setAttribute('aria-label', `${presentation?.terms.singular || 'Work package'} context`);
+  packageNav.replaceChildren(
+    el('p', { class: 'nav-label' }, presentation?.terms.singular || 'Work package'),
+    ...views.map((view) => el('a', { class: 'nav-item', href: `#package/${encodeURIComponent(packageId)}/${view.id}`, 'data-package-view': view.id }, el('span', { 'aria-hidden': 'true' }, view.icon || '▤'), view.label)),
+    el('a', { class: 'nav-item', href: '#import', 'data-route': 'import' }, el('span', { 'aria-hidden': 'true' }, '▩'), 'Import')
+  );
+}
+
+/** @param {string} route */
+async function updateContext(route) {
+  const [sites, packages, presentation] = await Promise.all([
+    /** @type {Promise<Site[]>} */ (api('/sites')),
+    /** @type {Promise<WorkPackageSummary[]>} */ (api('/work-packages')),
+    /** @type {Promise<import('../../server/types/browser-models').PresentationProfile | null>} */ (api('/presentation-profiles/work-package'))
+  ]);
+  const [kind, rawId] = route.split('/');
+  const routeId = rawId ? decodeURIComponent(rawId) : '';
+  const activePackage = kind === 'package' ? packages.find((entry) => entry.publicId === routeId) : null;
+  const activeSiteId = kind === 'site' ? routeId : activePackage?.sitePublicId || '';
+  const siteOptions = [el('option', { value: '' }, 'Select site…'), ...sites.map((site) => el('option', { value: site.publicId }, `${site.code} — ${site.name}`))];
+  siteContext.replaceChildren(...siteOptions);
+  siteContext.value = activeSiteId;
+  const visiblePackages = activeSiteId ? packages.filter((entry) => entry.sitePublicId === activeSiteId) : packages;
+  packageContext.replaceChildren(el('option', { value: '' }, `Select ${(presentation?.terms.singular || 'work package').toLowerCase()}…`), ...visiblePackages.map((entry) => el('option', { value: entry.publicId }, entry.packageReference)));
+  packageContext.value = activePackage?.publicId || '';
+  siteNav.hidden = !activeSiteId;
+  packageNav.hidden = !activePackage;
+  for (const link of siteNav.querySelectorAll('[data-site-view]')) link.setAttribute('href', `#site/${encodeURIComponent(activeSiteId)}/${link.getAttribute('data-site-view')}`);
+  renderPackageNavigation(presentation, activePackage?.publicId || '');
+  brandContext.textContent = activePackage?.packageReference || sites.find((site) => site.publicId === activeSiteId)?.code || 'No site';
 }
 
 /** @param {User} nextUser */
@@ -68,7 +125,28 @@ async function authenticated(nextUser) {
   user = nextUser;
   document.body.classList.remove('auth-active');
   nav.hidden = false;
-  await render();
+  await renderSafely();
+}
+
+function currentRoute() { return (location.hash || '#home').slice(1); }
+
+/** @param {string} route @param {unknown} error */
+function renderRouteFailure(route, error) {
+  const packageRoute = route.startsWith('package/');
+  const message = errorMessage(error);
+  app.replaceChildren(el('section', { class: 'stack' },
+    el('header', { class: 'page-head' }, el('div', {}, el('h1', {}, packageRoute ? 'Work package unavailable' : 'Unable to open page'), el('p', { class: 'page-subtitle' }, 'The requested record could not be loaded safely.'))),
+    el('div', { class: 'panel stack error-state', role: 'alert' }, el('p', { class: 'error' }, message),
+      el('div', { class: 'form-actions' }, el('a', { class: 'button secondary', href: packageRoute ? '#home' : '#home' }, 'Return to Work Packages')))));
+}
+
+async function renderSafely() {
+  const route = currentRoute();
+  try { await render(); }
+  catch (error) {
+    renderRouteFailure(route, error);
+    notify(errorMessage(error));
+  }
 }
 
 async function render() {
@@ -77,18 +155,22 @@ async function render() {
   user = /** @type {User | null} */ (status.user);
   if (!user) {
     nav.hidden = true;
+    context.hidden = true;
     authView(status.setupNeeded, authenticated);
     return;
   }
   document.body.classList.remove('auth-active');
   nav.hidden = false;
-  const route = (location.hash || '#home').slice(1);
+  context.hidden = false;
+  const route = currentRoute();
+  await updateContext(route);
   updateActiveNavigation(route);
   userSummary.textContent = `${user.displayName || user.username} · ${user.role}`;
+  const [kind, rawId, section] = route.split('/');
   if (route === 'sites') await sitesView(user);
-  else if (route.startsWith('site/')) await siteView(route.slice(5));
-  else if (route.startsWith('package/')) await packageView(route.slice(8), user);
-  else if (route === 'import') await importView();
+  else if (kind === 'site' && rawId) await siteView(decodeURIComponent(rawId), section || 'overview');
+  else if (kind === 'package' && rawId) await packageView(decodeURIComponent(rawId), user, section || 'details');
+  else if (kind === 'import') await importView(rawId ? decodeURIComponent(rawId) : undefined);
   else if (route === 'settings') await settingsView(user, cycleTheme);
   else await homeView(user, render);
 }
@@ -107,7 +189,14 @@ logout.addEventListener('click', async () => {
   }
 });
 
-window.addEventListener('hashchange', () => render().catch((error) => notify(errorMessage(error))));
+siteContext.addEventListener('change', () => {
+  location.hash = siteContext.value ? `#site/${encodeURIComponent(siteContext.value)}/overview` : '#home';
+});
+packageContext.addEventListener('change', () => {
+  location.hash = packageContext.value ? `#package/${encodeURIComponent(packageContext.value)}/${packageInitialView}` : siteContext.value ? `#site/${encodeURIComponent(siteContext.value)}/overview` : '#home';
+});
+
+window.addEventListener('hashchange', () => { renderSafely(); });
 themeToggle.addEventListener('click', cycleTheme);
 navCollapse.addEventListener('click', () => setNavigationCollapsed(true));
 navExpand.addEventListener('click', () => setNavigationCollapsed(false));
@@ -117,7 +206,7 @@ window.addEventListener('offline', updateConnectionStatus);
 window.addEventListener('online', () => {
   updateConnectionStatus();
   recoverPendingLogout()
-    .then((pending) => pending ? authView(false, authenticated) : replayQueue().then(() => render()))
+    .then((pending) => pending ? authView(false, authenticated) : replayQueue().then(() => renderSafely()))
     .then(() => notify('Back online'))
     .catch((error) => notify(errorMessage(error)));
 });
@@ -134,5 +223,5 @@ recoverPendingLogout().then((pending) => {
     authView(false, authenticated);
     return;
   }
-  return replayQueue().finally(() => render().catch((error) => app.replaceChildren(el('p', { class: 'error' }, errorMessage(error)))));
+  return replayQueue().finally(() => renderSafely());
 }).catch((error) => app.replaceChildren(el('p', { class: 'error' }, errorMessage(error))));

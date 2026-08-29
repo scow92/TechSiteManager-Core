@@ -10,7 +10,7 @@ const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 /**
  * Resolve only an exact installed package name and confine its entry point to
  * the real package root. Runtime installation and path/URL loading are not
- * supported by Plugin API V1.
+ * supported by the Plugin API.
  *
  * @param {string} packageName
  * @param {string} searchRoot

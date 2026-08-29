@@ -18,6 +18,7 @@ const FIELD_COLUMNS = Object.freeze({
   work_item: { itemReference: 'item_reference', title: 'title', description: 'description', status: 'status' },
   circuit: { circuitReference: 'circuit_reference', description: 'description', media: 'media', status: 'status' },
   segment: { segmentReference: 'segment_reference', fromEndpoint: 'from_endpoint', toEndpoint: 'to_endpoint', lengthMetres: 'length_metres', notes: 'notes' }
+  , consumable_requirement: { description: 'description', quantityRequired: 'quantity_required', unit: 'unit' }
 });
 
 /** @param {unknown} a @param {unknown} b */
@@ -37,6 +38,7 @@ function flatten(draft) {
     records.push({ entityType: 'circuit', sourceRecordKey: connection.sourceRecordKey, fields: connection.fields, sequence: connectionIndex });
     connection.segments.forEach((segment, segmentIndex) => records.push({ entityType: 'segment', sourceRecordKey: segment.sourceRecordKey, parentSourceRecordKey: connection.sourceRecordKey, fields: segment.fields, sequence: segmentIndex }));
   });
+  draft.workPackage.consumableRequirements.forEach((requirement, index) => records.push({ entityType: 'consumable_requirement', sourceRecordKey: requirement.sourceRecordKey, fields: requirement.fields, sequence: index }));
   return records;
 }
 
@@ -47,7 +49,7 @@ function flatten(draft) {
  * @returns {Promise<EntityRow | undefined>}
  */
 async function currentRow(trx, entityType, publicId) {
-  const table = { work_package: 'work_packages', work_item: 'work_items', circuit: 'circuits', segment: 'segments' }[entityType];
+  const table = { work_package: 'work_packages', work_item: 'work_items', circuit: 'circuits', segment: 'segments', consumable_requirement: 'consumable_requirements' }[entityType];
   return /** @type {Promise<EntityRow | undefined>} */ (trx(table).where({ public_id: publicId }).first());
 }
 
@@ -84,7 +86,11 @@ async function buildProposal(trx, source, draft) {
     const fields = [];
     for (const [fieldPath, candidate] of Object.entries(record.fields)) {
       const column = FIELD_COLUMNS[record.entityType][fieldPath];
-      const currentValue = current ? current[column] : null;
+      let currentValue = current && column ? current[column] : null;
+      if (current && !column && fieldPath.startsWith('extension.')) {
+        const extension = await trx('extension_values').where({ entity_public_id: current.public_id }).whereRaw("? = 'extension.' || plugin_id || '.' || field_id", [fieldPath]).first();
+        currentValue = extension ? JSON.parse(extension.value_json) : null;
+      }
       let owner = current ? ownershipMap.get(`${record.entityType}:${current.public_id}:${fieldPath}`) : undefined;
       if (current && !owner) owner = /** @type {OwnershipRow | undefined} */ (await trx('import_field_ownership').where({ entity_type: record.entityType, entity_public_id: current.public_id, field_path: fieldPath }).first());
       let conflict = false;

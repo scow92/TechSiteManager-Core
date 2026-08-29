@@ -47,6 +47,8 @@ test('fictional import creates a complete generic package and provenance atomica
   assert.equal(await db('work_items').count({ count: '*' }).first().then((row) => Number(row.count)), 1);
   assert.equal(await db('circuits').count({ count: '*' }).first().then((row) => Number(row.count)), 1);
   assert.equal(await db('segments').count({ count: '*' }).first().then((row) => Number(row.count)), 1);
+  const extension = await db('extension_values').first();
+  assert.equal(extension.plugin_id, 'example.fictional-facility'); assert.equal(JSON.parse(extension.value_json), 'LAB-01');
   const run = await db('import_runs').first();
   assert.equal(run.profile_id, 'example.facility-json-v1');
   assert.match(run.profile_hash, /^sha256:[a-f0-9]{64}$/);

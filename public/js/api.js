@@ -22,7 +22,10 @@ export async function api(path, options = {}) {
     if (error && typeof error === 'object') throw Object.assign(error, { offline: true });
     throw error;
   }
-  if (response.status === 204) return /** @type {T} */ (null);
+  if (response.status === 204) {
+    if (method === 'GET') await OfflineStore.put('reference-cache', null, path);
+    return /** @type {T} */ (null);
+  }
   /** @type {unknown} */
   const data = await response.json();
   if (!response.ok) throw new Error(data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : 'Request failed');

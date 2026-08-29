@@ -1,0 +1,121 @@
+schemaVersion: techsitemanager.io/presentation-profile/v1
+id: example.fictional-facility.presentation-v1
+entityType: work-package
+terms:
+  singular: Facility plan
+  plural: Facility plans
+  childSingular: Task card
+  childPlural: Task cards
+fields:
+  - id: plan-reference
+    entityType: work-package
+    binding: core.packageReference
+    label: Plan reference
+    type: string
+    required: true
+  - id: plan-title
+    entityType: work-package
+    binding: core.title
+    label: Plan title
+    type: string
+    required: true
+  - id: plan-status
+    entityType: work-package
+    binding: core.status
+    label: Plan status
+    type: enum
+    required: true
+    options: [planned, active, blocked, complete, cancelled]
+  - id: zone-code
+    entityType: work-package
+    binding: extension.example.fictional-facility.zone-code
+    label: Habitat zone
+    type: string
+  - id: task-reference
+    entityType: work-item
+    binding: core.itemReference
+    label: Task reference
+    type: string
+    required: true
+  - id: task-title
+    entityType: work-item
+    binding: core.title
+    label: Task title
+    type: string
+    required: true
+  - id: task-description
+    entityType: work-item
+    binding: core.description
+    label: Task description
+    type: multiline
+    wide: true
+  - id: link-reference
+    entityType: circuit
+    binding: core.circuitReference
+    label: Link
+    type: string
+  - id: link-media
+    entityType: circuit
+    binding: core.media
+    label: Medium
+    type: string
+  - id: from-endpoint
+    entityType: segment
+    binding: core.fromEndpoint
+    label: Origin
+    type: string
+  - id: to-endpoint
+    entityType: segment
+    binding: core.toEndpoint
+    label: Destination
+    type: string
+  - id: requirement-description
+    entityType: consumable-requirement
+    binding: core.description
+    label: Supply
+    type: string
+  - id: requirement-quantity
+    entityType: consumable-requirement
+    binding: core.quantityRequired
+    label: Required
+    type: decimal
+  - id: requirement-unit
+    entityType: consumable-requirement
+    binding: core.unit
+    label: Unit
+    type: string
+views:
+  - id: plan
+    label: Plan
+    icon: "▤"
+    component: record-form
+    description: Fictional facility plan details
+    sections:
+      - id: identity
+        label: Plan identity
+        hint: Core fields plus one fictional extension value
+        fields: [plan-reference, plan-title, plan-status, zone-code]
+  - id: tasks
+    label: Task cards
+    icon: "▥"
+    component: child-record-tabs
+    emptyTitle: No task cards recorded
+    emptyDescription: Import a fictional plan containing task cards.
+    fields: [task-reference, task-title, task-description]
+  - id: links
+    label: Links
+    icon: "◉"
+    component: connection-schedule
+    emptyTitle: No links recorded
+    circuitFields: [link-reference, link-media]
+    segmentFields: [from-endpoint, to-endpoint]
+  - id: supplies
+    label: Supplies
+    icon: "▣"
+    component: requirement-table
+    fields: [requirement-description, requirement-quantity, requirement-unit]
+  - id: summary
+    label: Supply summary
+    icon: "Σ"
+    component: material-summary
+    title: Supply

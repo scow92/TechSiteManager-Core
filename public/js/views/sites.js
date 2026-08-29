@@ -27,8 +27,8 @@ export async function sitesView(user) {
     user.role !== 'viewer' ? form : el('p', { class: 'muted' }, 'Read-only access')));
 }
 
-/** @param {string} publicId */
-export async function siteView(publicId) {
+/** @param {string} publicId @param {string} [section] */
+export async function siteView(publicId, section = 'overview') {
   const sites = /** @type {Site[]} */ (await api('/sites'));
   const site = sites.find((entry) => entry.publicId === publicId);
   if (!site) throw new Error('Site not found');
@@ -53,13 +53,19 @@ export async function siteView(publicId) {
         }, device.label || device.hostname)) : el('span', { class: 'rack-empty' }, 'No front devices')),
       el('p', { class: 'muted rack-meta' }, rack.suiteLine ? `Suite line ${rack.suiteLine}` : 'Suite line not recorded'));
   });
-  const sections = kinds.map(([, label], index) => el('section', { class: 'panel record-panel' },
+  const recordSections = kinds.map(([, label], index) => el('section', { class: 'panel record-panel' },
     el('div', { class: 'section-head' }, el('h2', {}, label), el('span', { class: 'count-badge' }, records[index].length)), records[index].length
       ? el('ul', { class: 'record-list' }, ...records[index].map((record) => el('li', {}, record.name || record.label || record.hostname || `${record.endpointA} → ${record.endpointB}`)))
       : el('p', { class: 'empty-inline' }, `No ${label.toLowerCase()} recorded.`)));
-  app.replaceChildren(el('section', { class: 'stack' }, el('p', { class: 'breadcrumb' }, el('a', { href: '#sites' }, 'Sites'), ' / ', site.code),
-    pageHead(`${site.code} — ${site.name}`, site.description || 'Canonical site infrastructure and measured distances.'),
-    rooms.length ? el('section', { class: 'panel' }, el('div', { class: 'section-head' }, el('h2', {}, 'Rooms'), el('span', { class: 'count-badge' }, rooms.length)), el('div', { class: 'room-grid' }, ...roomCards)) : null,
-    racks.length ? el('section', { class: 'panel' }, el('div', { class: 'section-head' }, el('h2', {}, 'Rack previews'), el('span', { class: 'count-badge' }, racks.length)), el('div', { class: 'rack-preview-grid' }, ...rackPreviews)) : null,
-    el('div', { class: 'site-record-grid' }, ...sections)));
+  const roomSection = rooms.length ? el('section', { class: 'panel' }, el('div', { class: 'section-head' }, el('h2', {}, 'Rooms'), el('span', { class: 'count-badge' }, rooms.length)), el('div', { class: 'room-grid' }, ...roomCards)) : emptyState('No rooms recorded', 'Add a room before placing racks and devices.');
+  const rackSection = racks.length ? el('section', { class: 'panel' }, el('div', { class: 'section-head' }, el('h2', {}, section === 'racks' ? 'Rack elevations' : 'Rack previews'), el('span', { class: 'count-badge' }, racks.length)), el('div', { class: `rack-preview-grid${section === 'racks' ? ' rack-elevation-grid' : ''}` }, ...rackPreviews)) : emptyState('No racks recorded', 'Racks are canonical site records and remain available to every work package.');
+  const selectedIndex = { rooms: 0, racks: 1, 'termination-points': 2, devices: 3, distances: 4 }[section];
+  const content = section === 'rooms' ? roomSection : section === 'racks' ? rackSection : selectedIndex !== undefined ? recordSections[selectedIndex] : el('div', { class: 'stack' },
+    el('div', { class: 'summary-grid site-summary' },
+      el('div', { class: 'summary-card' }, el('strong', {}, rooms.length), el('span', {}, 'Rooms')),
+      el('div', { class: 'summary-card' }, el('strong', {}, racks.length), el('span', {}, 'Racks')),
+      el('div', { class: 'summary-card' }, el('strong', {}, devices.length), el('span', {}, 'Devices'))),
+    roomSection, rackSection);
+  app.replaceChildren(el('section', { class: 'view stack' }, el('p', { class: 'breadcrumb' }, el('a', { href: '#home' }, 'Home'), ' / ', site.code),
+    pageHead(`${site.code} — ${site.name}`, site.description || 'Canonical site infrastructure and measured distances.'), content));
 }

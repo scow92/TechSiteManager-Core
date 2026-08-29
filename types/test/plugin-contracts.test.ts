@@ -19,7 +19,7 @@ const invalidProvider: ImportProvider = {
   id: 'example.invalid-provider',
   label: 'Invalid compile-time fixture',
   input: {
-    // @ts-expect-error -- Plugin API V1 deliberately rejects executable browser inputs.
+    // @ts-expect-error -- Plugin APIs deliberately reject executable browser inputs.
     type: 'browser-script',
     maxBytes: 1024
   },
@@ -31,7 +31,7 @@ const invalidProvider: ImportProvider = {
 const invalidContribution: PluginPackage = {
   manifest,
   imports: [invalidProvider],
-  // @ts-expect-error -- arbitrary route contributions are outside Plugin API V1.
+  // @ts-expect-error -- arbitrary route contributions are outside the Plugin API.
   routes: []
 };
 
