@@ -46,6 +46,7 @@ The example consumes only the invented data in
 ```bash
 npm run lint
 npm run syntax
+npm run typecheck
 npm test
 npm run test:e2e
 npm run scan:public

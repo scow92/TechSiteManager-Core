@@ -9,7 +9,8 @@ binary review.
 
 - root project metadata: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`,
   `SECURITY.md`, `COPYRIGHT.md`, `LICENSE`, `package.json`, `package-lock.json`,
-  `.nvmrc`, `.gitignore`, and `.dockerignore`;
+  `tsconfig.json`, staged `tsconfig.*.json` files, `.nvmrc`, `.gitignore`, and
+  `.dockerignore`;
 - public automation: `.github/dependabot.yml`,
   `.github/pull_request_template.md`, and `.github/workflows/ci.yml`;
 - generic browser shell: `public/index.html`, `public/manifest.json`,
@@ -18,6 +19,7 @@ binary review.
   `server/knexfile.js`, and generic files below `server/db/`, `server/lib/`,
   `server/routes/`, `server/imports/`, `server/plugins/`, and `server/scripts/`;
 - public-safe tests: JavaScript below `server/test/` using invented data only;
+- public TypeScript declarations and compile-time fixtures below `types/`;
 - fictional integration example: `examples/fictional-plugin/`;
 - zero-plugin and fictional-example configuration: `config/`;
 - newly written public documentation: Markdown below `docs/`;

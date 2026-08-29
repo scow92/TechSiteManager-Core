@@ -7,9 +7,11 @@ const root = path.join(__dirname, '..', '..');
 const allowedRootFiles = new Set([
   '.dockerignore', '.gitignore', '.nvmrc', 'AGENTS.md', 'CONTRIBUTING.md',
   'COPYRIGHT.md', 'Dockerfile', 'LICENSE', 'README.md', 'SECURITY.md',
-  'docker-compose.yml', 'eslint.config.js', 'package-lock.json', 'package.json'
+  'docker-compose.yml', 'eslint.config.js', 'package-lock.json', 'package.json',
+  'tsconfig.json', 'tsconfig.browser.json', 'tsconfig.contracts.json',
+  'tsconfig.tests.json'
 ]);
-const allowedRootDirectories = new Set(['.github', 'config', 'docs', 'examples', 'public', 'server']);
+const allowedRootDirectories = new Set(['.github', 'config', 'docs', 'examples', 'public', 'server', 'types']);
 const forbiddenExtensions = new Set(['.7z', '.bak', '.db', '.doc', '.docx', '.dump', '.gz', '.jpeg', '.jpg', '.key', '.log', '.ods', '.pem', '.png', '.sqlite', '.sqlite3', '.tar', '.tgz', '.webp', '.xls', '.xlsm', '.xlsx', '.zip']);
 const patterns = [
   ['secret-material', /BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|(?:password|token|secret|api[-_]?key)\s*[:=]\s*["'][^"']{8,}["']/i],

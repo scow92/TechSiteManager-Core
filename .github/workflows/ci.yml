@@ -20,6 +20,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run syntax
+      - run: npm run typecheck
       - run: npm test
       - run: npm run scan:public
       - run: npm audit --audit-level=high
