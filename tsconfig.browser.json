@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2024"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2022"
+  },
+  "include": [
+    "server/types/browser-globals.d.ts",
+    "public/js/api.js",
+    "public/js/auth.js",
+    "public/js/dom.js",
+    "public/js/main.js",
+    "public/js/offline-ui.js",
+    "public/js/import/**/*.js",
+    "public/js/views/**/*.js"
+  ]
+}

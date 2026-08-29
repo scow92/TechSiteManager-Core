@@ -62,8 +62,9 @@ curl --fail http://127.0.0.1:3000/api/health
 
 ## Architecture
 
-The browser is plain JavaScript with a service-worker shell and IndexedDB
-queues. Offline mutations replay in FIFO order; transient and unclassified
+The browser is plain JavaScript using native ES modules without a framework,
+bundler, transpiler, or build step. A service-worker shell and IndexedDB
+queues provide offline support. Offline mutations replay in FIFO order; transient and unclassified
 failures remain queued, while permanent rejections are visible and explicitly
 retryable. The server is CommonJS on Express, Knex, and SQLite. One
 intentionally designed migration creates the generic fresh-install schema.

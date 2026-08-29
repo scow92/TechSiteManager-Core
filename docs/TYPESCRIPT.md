@@ -11,11 +11,13 @@ with broad exclusions or relaxed compiler settings:
    concurrency are the initial strict server boundary.
 2. Public Plugin API and import declarations add strict fictional-plugin and
    compile-time contract fixtures.
-3. Plugin loading, profiles, imports, reconciliation, provenance, Express
-   boundaries, exporters, and database transaction callbacks join the server
+3. Plugin loading, profiles, imports, reconciliation, provenance, exporters,
+   and database transaction callbacks join the server
    configuration as their runtime guards and JSDoc types are strengthened.
-4. Browser modules use a separate strict DOM configuration after the native
-   module split is stable.
+4. Native browser modules are checked by `tsconfig.browser.json` with strict
+   DOM types and no emitted output. Classic IndexedDB/offline primitives remain
+   covered by executable contract and Playwright tests while their staged
+   declaration work is pending.
 
 Server tests continue to run as executable unit and integration tests during
 the migration. Strict compile-time fixtures are added with the public contract

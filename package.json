@@ -37,7 +37,7 @@
     "migrate": "node server/scripts/migrate.js",
     "lint": "eslint .",
     "syntax": "find public server examples -type f \\( -name '*.js' -o -name '*.cjs' \\) -print0 | xargs -0 -n1 node --check",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.contracts.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.contracts.json && tsc --noEmit -p tsconfig.browser.json",
     "test": "node --test server/test/*.test.js",
     "test:e2e": "node server/test/e2e.playwright.js",
     "test:recovery": "node --test server/test/recovery.test.js",

@@ -13,6 +13,12 @@ test('service worker shell exactly covers HTML static dependencies and excludes 
   const worker = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
   const urls = [...html.matchAll(/(?:src|href)="(\/[^"]+)"/g)].map((match) => match[1]).filter((url) => !url.startsWith('/api/'));
   for (const url of urls) assert.match(worker, new RegExp(url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  const moduleFiles = fs.readdirSync(path.join(root, 'public', 'js'), { recursive: true })
+    .filter((file) => String(file).endsWith('.js') && !['idb.js', 'offline.js'].includes(String(file)))
+    .map((file) => `/js/${String(file).replaceAll(path.sep, '/')}`);
+  for (const url of moduleFiles) assert.match(worker, new RegExp(url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(worker, /techsitemanager-shell-v4/);
+  assert.doesNotMatch(worker, /\/js\/app\.js/);
   assert.match(worker, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.doesNotMatch(worker, /\/api\/[A-Za-z]/);
 });
@@ -31,11 +37,11 @@ test('service worker uses network-first shell reads and never handles cross-orig
   let responsePromise = null;
   listeners.fetch({ request: { url: 'https://example.invalid/api/sites', method: 'GET' }, respondWith(value) { responsePromise = value; } });
   assert.equal(responsePromise, null);
-  listeners.fetch({ request: { url: 'https://different.invalid/app.js', method: 'GET' }, respondWith(value) { responsePromise = value; } });
+  listeners.fetch({ request: { url: 'https://different.invalid/main.js', method: 'GET' }, respondWith(value) { responsePromise = value; } });
   assert.equal(responsePromise, null);
-  listeners.fetch({ request: { url: 'https://example.invalid/js/app.js', method: 'GET' }, respondWith(value) { responsePromise = value; } });
+  listeners.fetch({ request: { url: 'https://example.invalid/js/main.js', method: 'GET' }, respondWith(value) { responsePromise = value; } });
   await responsePromise; await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(cacheWrites, ['https://example.invalid/js/app.js']);
+  assert.deepEqual(cacheWrites, ['https://example.invalid/js/main.js']);
 });
 
 test('IndexedDB schema separates disposable caches from durable queues', () => {
@@ -48,7 +54,7 @@ test('IndexedDB schema separates disposable caches from durable queues', () => {
 });
 
 test('offline boot retries durable logout before restoring an authenticated view', () => {
-  const source = fs.readFileSync(path.join(root, 'public', 'js', 'app.js'), 'utf8');
+  const source = ['main.js', 'offline-ui.js'].map((file) => fs.readFileSync(path.join(root, 'public', 'js', file), 'utf8')).join('\n');
   assert.match(source, /recoverPendingLogout\(\)\.then/);
   assert.match(source, /response\.status === 204 \|\| response\.status === 401/);
   assert.match(source, /Keep the durable marker until the server session is revoked/);
@@ -56,8 +62,11 @@ test('offline boot retries durable logout before restoring an authenticated view
 
 test('browser loads no provider scripts and renders dynamic values with DOM APIs', () => {
   const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
-  const source = fs.readFileSync(path.join(root, 'public', 'js', 'app.js'), 'utf8');
+  const source = fs.readdirSync(path.join(root, 'public', 'js'), { recursive: true })
+    .filter((file) => String(file).endsWith('.js'))
+    .map((file) => fs.readFileSync(path.join(root, 'public', 'js', file), 'utf8')).join('\n');
   assert.doesNotMatch(html, /plugin|provider/i);
   assert.doesNotMatch(source, /innerHTML|insertAdjacentHTML|eval\s*\(/);
   assert.match(source, /document\.createElement/);
+  assert.doesNotMatch(source, /import\s*\(.*plugin/i);
 });
