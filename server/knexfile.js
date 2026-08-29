@@ -9,6 +9,10 @@ const base = {
   useNullAsDefault: true,
   migrations: { directory: path.join(__dirname, 'db', 'migrations') },
   pool: {
+    /**
+     * @param {import('better-sqlite3').Database} connection
+     * @param {(error: Error | null, connection: import('better-sqlite3').Database) => void} done
+     */
     afterCreate(connection, done) {
       connection.pragma('foreign_keys = ON');
       connection.pragma('journal_mode = WAL');

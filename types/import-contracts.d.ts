@@ -99,6 +99,40 @@ export interface ImportDraft {
   readonly warnings?: readonly SourceWarning[];
 }
 
+/** Core-owned normalized form produced only after runtime validation. */
+export interface ValidatedImportDraft {
+  readonly schemaVersion: 'techsitemanager.io/import-draft/v1';
+  readonly providerId: string;
+  readonly providerVersion: string;
+  readonly profileId: string | null;
+  readonly profileHash: `sha256:${string}` | null;
+  readonly source: {
+    readonly externalSourceId: string;
+    readonly sourceVersion: string | null;
+    readonly contentHash: `sha256:${string}`;
+    readonly connectorId: string;
+  };
+  readonly target: { readonly siteCode: string; readonly siteName: string };
+  readonly workPackage: {
+    readonly sourceRecordKey: string;
+    readonly fields: Readonly<Record<string, ManagedValue>>;
+    readonly workItems: readonly {
+      readonly sourceRecordKey: string;
+      readonly sequenceHint: number;
+      readonly fields: Readonly<Record<string, ManagedValue>>;
+    }[];
+    readonly connections: readonly {
+      readonly sourceRecordKey: string;
+      readonly fields: Readonly<Record<string, ManagedValue>>;
+      readonly segments: readonly {
+        readonly sourceRecordKey: string;
+        readonly fields: Readonly<Record<string, ManagedValue>>;
+      }[];
+    }[];
+  };
+  readonly warnings: readonly Required<SourceWarning>[];
+}
+
 export type ReconciliationEntityType =
   | 'work_package'
   | 'work_item'

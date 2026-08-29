@@ -134,7 +134,7 @@ function ownership(value, path) {
 }
 
 /**
- * @param {Record<string, unknown> | unknown[]} value
+ * @param {object} value
  * @param {string} path
  * @param {number} [maxBytes]
  */

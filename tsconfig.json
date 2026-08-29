@@ -13,14 +13,22 @@
       "techsitemanager/import-contracts": ["./types/import-contracts.d.ts"],
       "techsitemanager/plugin-api": ["./types/plugin-api.d.ts"]
     },
+    "resolveJsonModule": true,
     "strict": true,
     "target": "ES2024",
     "types": ["node"]
   },
   "include": [
     "server/config.js",
+    "server/imports/contracts.js",
+    "server/imports/reconcile.js",
+    "server/imports/service.js",
     "server/lib/concurrency.js",
     "server/lib/errors.js",
-    "server/lib/validation.js"
+    "server/lib/validation.js",
+    "server/lib/work-packages.js",
+    "server/plugins/export-service.js",
+    "server/plugins/loader.js",
+    "server/plugins/profiles.js"
   ]
 }
