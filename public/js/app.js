@@ -18,20 +18,21 @@
   }
 
   async function api(path, options = {}) {
-    const method = options.method || 'GET';
-    const body = options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body;
-    const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+    const { queueable = false, queueMetadata = {}, ...requestOptions } = options;
+    const method = requestOptions.method || 'GET';
+    const body = requestOptions.body && typeof requestOptions.body !== 'string' ? JSON.stringify(requestOptions.body) : requestOptions.body;
+    const headers = { 'Content-Type': 'application/json', ...(requestOptions.headers || {}) };
     let response;
-    try { response = await fetch(`/api${path}`, { credentials: 'same-origin', ...options, method, headers, body }); }
+    try { response = await fetch(`/api${path}`, { credentials: 'same-origin', ...requestOptions, method, headers, body }); }
     catch (error) {
       if (method === 'GET') {
         const cached = await OfflineStore.get('reference-cache', path);
         if (cached !== undefined) return cached;
       }
-      if (options.queueable) {
-        const operation = { id: crypto.randomUUID(), path, method, headers, body, createdAt: Date.now(), attempts: 0 };
+      if (queueable) {
+        const operation = { id: crypto.randomUUID(), path, method, headers, body, createdAt: Date.now(), attempts: 0, dependsOn: queueMetadata.dependsOn || [], temporaryId: queueMetadata.temporaryId || null, requiredTemporaryIds: queueMetadata.requiredTemporaryIds || [] };
         await OfflineStore.put('operation-queue', operation);
-        return { queued: true, operationId: operation.id };
+        return { queued: true, operationId: operation.id, publicId: operation.temporaryId };
       }
       error.offline = true;
       throw error;
@@ -44,16 +45,17 @@
   }
 
   async function replayQueue() {
-    const operations = (await OfflineStore.all('operation-queue')).sort((a, b) => a.createdAt - b.createdAt);
-    for (const operation of operations) {
-      let response;
-      try { response = await fetch(`/api${operation.path}`, { method: operation.method, headers: operation.headers, body: operation.body, credentials: 'same-origin' }); }
-      catch { return; }
-      if (response.ok) { await OfflineStore.delete('operation-queue', operation.id); continue; }
-      if (response.status >= 500 || response.status === 429) return;
-      await OfflineStore.delete('operation-queue', operation.id);
-      await OfflineStore.put('dead-letters', { ...operation, rejectedAt: Date.now(), status: response.status });
-    }
+    return OfflineSync.replay(OfflineStore, fetch);
+  }
+
+  async function recoverPendingLogout() {
+    const pending = await OfflineStore.get('pending-logout', 'current');
+    if (!pending) return false;
+    try {
+      const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
+      if (response.status === 204 || response.status === 401) { await OfflineStore.delete('pending-logout', 'current'); return false; }
+    } catch { /* Keep the durable marker until the server session is revoked. */ }
+    return true;
   }
 
   function notify(message) {
@@ -62,6 +64,19 @@
 
   function field(label, name, type = 'text', required = false) {
     return el('label', {}, label, el('input', { name, type, required: required ? '' : null }));
+  }
+
+  async function offlineStatus() {
+    const [queued, rejected] = await Promise.all([OfflineStore.all('operation-queue'), OfflineStore.all('dead-letters')]);
+    if (!queued.length && !rejected.length) return null;
+    const retryButtons = rejected.map((operation) => el('button', { type: 'button', class: 'secondary', onclick: async () => {
+      await OfflineStore.retryDeadLetter(operation.id); await replayQueue(); await render();
+    } }, `Retry rejected ${operation.method} ${operation.path}`));
+    return el('aside', { class: 'panel stack', 'aria-label': 'Offline synchronization status' },
+      el('h2', {}, 'Offline synchronization'),
+      el('p', {}, `${queued.length} queued, ${rejected.length} rejected`),
+      ...retryButtons
+    );
   }
 
   function authView(setupNeeded) {
@@ -81,7 +96,7 @@
   }
 
   async function homeView() {
-    const [packages, exporters] = await Promise.all([api('/work-packages'), api('/plugin-exporters')]);
+    const [packages, exporters, synchronization] = await Promise.all([api('/work-packages'), api('/plugin-exporters'), offlineStatus()]);
     const search = el('input', { type: 'search', placeholder: 'Search packages, sites, racks, devices, and endpoints', 'aria-label': 'Search records' });
     const list = el('div', { class: 'grid' });
     const show = (rows) => list.replaceChildren(...rows.map((record) => {
@@ -96,13 +111,13 @@
     show(packages);
     let timer;
     search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(async () => show(search.value.trim() ? await api(`/search?scope=all&q=${encodeURIComponent(search.value.trim())}`) : packages), 180); });
-    app.replaceChildren(el('section', {}, el('div', { class: 'toolbar' }, el('label', {}, 'Search', search)), packages.length ? list : el('div', { class: 'panel' }, el('h1', {}, 'Work Packages'), el('p', { class: 'muted' }, 'No work packages have been created yet. Generic records remain available without import plugins.'))));
+    app.replaceChildren(el('section', { class: 'stack' }, ...(synchronization ? [synchronization] : []), el('div', { class: 'toolbar' }, el('label', {}, 'Search', search)), packages.length ? list : el('div', { class: 'panel' }, el('h1', {}, 'Work Packages'), el('p', { class: 'muted' }, 'No work packages have been created yet. Generic records remain available without import plugins.'))));
   }
 
   async function sitesView() {
     const sites = await api('/sites');
     const form = el('form', { class: 'panel stack' }, el('h2', {}, 'Add site'), field('Code', 'code', 'text', true), field('Name', 'name', 'text', true), field('Description', 'description'), el('button', { type: 'submit' }, 'Add site'));
-    form.addEventListener('submit', async (event) => { event.preventDefault(); try { const result = await api('/sites', { method: 'POST', body: Object.fromEntries(new FormData(form)), queueable: true }); notify(result.queued ? 'Site queued for sync' : 'Site created'); await sitesView(); } catch (error) { notify(error.message); } });
+    form.addEventListener('submit', async (event) => { event.preventDefault(); try { const temporaryId = `urn:offline:${crypto.randomUUID()}`; const result = await api('/sites', { method: 'POST', body: Object.fromEntries(new FormData(form)), queueable: true, queueMetadata: { temporaryId } }); notify(result.queued ? 'Site queued for sync' : 'Site created'); await sitesView(); } catch (error) { notify(error.message); } });
     const cards = el('div', { class: 'grid' }, ...sites.map((site) => el('article', { class: 'card' },
       el('h2', {}, site.code), el('p', {}, site.name), el('p', { class: 'muted' }, site.description)
     )));
@@ -218,7 +233,10 @@
     finally { user = null; location.hash = ''; authView(false); }
   });
   window.addEventListener('hashchange', () => render().catch((error) => notify(error.message)));
-  window.addEventListener('online', () => { replayQueue().then(() => notify('Back online')); });
+  window.addEventListener('online', () => { recoverPendingLogout().then((pending) => pending ? authView(false) : replayQueue().then(() => render())).then(() => notify('Back online')).catch((error) => notify(error.message)); });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
-  replayQueue().finally(() => render().catch((error) => app.replaceChildren(el('p', { class: 'error' }, error.message))));
+  recoverPendingLogout().then((pending) => {
+    if (pending) { nav.hidden = true; authView(false); return; }
+    return replayQueue().finally(() => render().catch((error) => app.replaceChildren(el('p', { class: 'error' }, error.message))));
+  }).catch((error) => app.replaceChildren(el('p', { class: 'error' }, error.message)));
 }());

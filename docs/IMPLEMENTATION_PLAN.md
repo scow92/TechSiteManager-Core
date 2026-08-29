@@ -52,7 +52,7 @@ or private repository details.
 - [x] Keep API traffic out of the service-worker cache.
 - [x] Use IndexedDB for disposable caches, durable operations, dead letters,
   dirty packages, and pending logout.
-- [ ] Harden FIFO replay, response classification, queued dependencies, and
+- [x] Harden FIFO replay, response classification, queued dependencies, and
   pending-logout recovery.
 - [x] Provide SQLite-safe online backup, verified restore, and integrity tests.
 - [x] Provide a zero-plugin, non-root, read-only-container deployment.

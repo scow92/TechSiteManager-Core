@@ -58,8 +58,10 @@ curl --fail http://127.0.0.1:3000/api/health
 ## Architecture
 
 The browser is plain JavaScript with a service-worker shell and IndexedDB
-queues. The server is CommonJS on Express, Knex, and SQLite. One intentionally
-designed migration creates the generic fresh-install schema.
+queues. Offline mutations replay in FIFO order; transient and unclassified
+failures remain queued, while permanent rejections are visible and explicitly
+retryable. The server is CommonJS on Express, Knex, and SQLite. One
+intentionally designed migration creates the generic fresh-install schema.
 
 Plugin API V1 is a narrow trusted in-process boundary for import providers,
 source connectors, named transformations, validated YAML profiles, and bounded
