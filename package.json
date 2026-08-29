@@ -2,6 +2,7 @@
   "name": "techsitemanager",
   "version": "1.0.0-rc.1",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Generic planning and record management for structured-cabling work",
   "main": "server/server.js",
   "files": [
@@ -15,6 +16,7 @@
     "CONTRIBUTING.md",
     "SECURITY.md",
     "COPYRIGHT.md",
+    "LICENSE",
     "Dockerfile",
     "docker-compose.yml"
   ],
@@ -31,7 +33,11 @@
     "backup": "node server/scripts/backup.js",
     "restore": "node server/scripts/restore.js",
     "sbom": "npm sbom --sbom-format cyclonedx > sbom.cdx.json",
-    "scan:public": "node server/scripts/disclosure-scan.js"
+    "scan:public": "node server/scripts/disclosure-scan.js",
+    "scan:history": "node server/scripts/history-disclosure-scan.js",
+    "review:licenses": "node server/scripts/dependency-license-review.js",
+    "review:package": "node server/scripts/package-content-review.js",
+    "verify:release": "npm run lint && npm run syntax && npm test && npm run test:e2e && npm run scan:public && npm run scan:history && npm run review:licenses && npm run review:package"
   },
   "dependencies": {
     "ajv": "^8.17.1",

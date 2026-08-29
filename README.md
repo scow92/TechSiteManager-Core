@@ -13,8 +13,7 @@ backup/restore are core capabilities.
 ## Status
 
 This repository is a private public-release candidate. It must not be made
-public until the owner completes the disclosure review and chooses an outbound
-license. No license has been granted yet.
+public until the remaining review and publication approvals are complete.
 
 ## Run locally
 
@@ -58,14 +57,27 @@ curl --fail http://127.0.0.1:3000/api/health
 ## Architecture
 
 The browser is plain JavaScript with a service-worker shell and IndexedDB
-queues. The server is CommonJS on Express, Knex, and SQLite. One intentionally
-designed migration creates the generic fresh-install schema.
+queues. Offline mutations replay in FIFO order; transient and unclassified
+failures remain queued, while permanent rejections are visible and explicitly
+retryable. The server is CommonJS on Express, Knex, and SQLite. One
+intentionally designed migration creates the generic fresh-install schema.
 
 Plugin API V1 is a narrow trusted in-process boundary for import providers,
 source connectors, named transformations, validated YAML profiles, and bounded
 source-specific exporters. Plugins receive no supported Express, Knex, cookie,
 raw-request, or core-write handle. They are trusted code, not sandboxed code.
 
+Configured packages require exact version pins. Provider descriptors are
+rendered by the generic browser shell, and bounded exporters are invoked only
+through core-owned authenticated routes.
+
 See [docs/PLUGINS.md](docs/PLUGINS.md),
 [docs/IMPORT_PROVIDER_API.md](docs/IMPORT_PROVIDER_API.md), and
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## Licence
+
+Original TechSiteManager code is licensed under the Apache License, Version
+2.0 (`Apache-2.0`). See [LICENSE](LICENSE) and [COPYRIGHT.md](COPYRIGHT.md).
+Third-party components remain under their respective licences; see
+[docs/THIRD_PARTY_LICENSES.md](docs/THIRD_PARTY_LICENSES.md).

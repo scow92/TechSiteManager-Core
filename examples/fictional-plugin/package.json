@@ -4,6 +4,6 @@
   "description": "Fictional import-provider example for TechSiteManager",
   "main": "index.cjs",
   "type": "commonjs",
-  "license": "UNLICENSED",
-  "files": ["index.cjs", "provider.cjs", "profile.yaml", "README.md"]
+  "license": "Apache-2.0",
+  "files": ["index.cjs", "provider.cjs", "exporter.cjs", "profile.yaml", "README.md", "LICENSE"]
 }

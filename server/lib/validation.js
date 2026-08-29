@@ -40,6 +40,28 @@ function integer(value, path, options = {}) {
   return value;
 }
 
+function number(value, path, options = {}) {
+  const { min = -Number.MAX_VALUE, max = Number.MAX_VALUE, required = false } = options;
+  if (value === undefined || value === null) {
+    if (required) throw httpError(422, 'required_field', `${path} is required`, path);
+    return null;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+    throw httpError(422, 'invalid_field', `${path} is invalid`, path);
+  }
+  return value;
+}
+
+function array(value, path, options = {}) {
+  const { max = 1000, required = false } = options;
+  if (value === undefined || value === null) {
+    if (required) throw httpError(422, 'required_field', `${path} is required`, path);
+    return [];
+  }
+  if (!Array.isArray(value) || value.length > max) throw httpError(422, 'invalid_shape', `${path} must be an array`, path);
+  return value;
+}
+
 function enumeration(value, path, values, required = false) {
   if (value === undefined || value === null) {
     if (required) throw httpError(422, 'required_field', `${path} is required`, path);
@@ -68,4 +90,4 @@ function boundedJson(value, path, maxBytes = 5 * 1024 * 1024) {
   return json;
 }
 
-module.exports = { object, knownKeys, string, integer, enumeration, uuid, durableId, ownership, boundedJson, DURABLE_ID };
+module.exports = { object, knownKeys, string, integer, number, array, enumeration, uuid, durableId, ownership, boundedJson, DURABLE_ID };

@@ -10,6 +10,11 @@ external reference acquired by a registered connector. Extra fields are
 bounded strings, multiline values, integers, booleans, enums, or core-entity
 selectors. No provider browser code is loaded.
 
+Core renders these descriptors, validates field names/types/required values,
+enforces the artifact byte and media-type limits, and invokes the configured
+connector only for an external-reference provider. The browser never receives
+connector code or credentials.
+
 Normalized records use stable `sourceRecordKey` values and managed fields:
 
 ```json
@@ -31,3 +36,8 @@ absent, unlink and keep, or defer. Import never hard-deletes a core entity.
 Drafts are actor-scoped, hash-bound, version-bound, and expire after a bounded
 interval. Apply validates them again and writes the package, children, links,
 ownership, run summary, and audit event in one transaction.
+
+Approval accepts decisions only for fields and absences present in that exact
+proposal. Unknown decisions, malformed maps, unknown warning
+acknowledgements, a changed draft hash, or changed target versions are rejected
+before persistence.

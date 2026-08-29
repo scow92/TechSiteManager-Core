@@ -40,9 +40,18 @@ test('service worker uses network-first shell reads and never handles cross-orig
 
 test('IndexedDB schema separates disposable caches from durable queues', () => {
   const source = fs.readFileSync(path.join(root, 'public', 'js', 'idb.js'), 'utf8');
-  for (const store of ['reference-cache', 'dirty-work-packages', 'operation-queue', 'dead-letters', 'pending-logout']) assert.match(source, new RegExp(store));
+  for (const store of ['reference-cache', 'dirty-work-packages', 'operation-queue', 'dead-letters', 'pending-logout', 'id-remaps']) assert.match(source, new RegExp(store));
+  assert.match(source, /const VERSION = 2/);
   assert.match(source, /tx\.oncomplete/);
+  assert.match(source, /retryDeadLetter/);
   assert.doesNotMatch(source, /localStorage/);
+});
+
+test('offline boot retries durable logout before restoring an authenticated view', () => {
+  const source = fs.readFileSync(path.join(root, 'public', 'js', 'app.js'), 'utf8');
+  assert.match(source, /recoverPendingLogout\(\)\.then/);
+  assert.match(source, /response\.status === 204 \|\| response\.status === 401/);
+  assert.match(source, /Keep the durable marker until the server session is revoked/);
 });
 
 test('browser loads no provider scripts and renders dynamic values with DOM APIs', () => {

@@ -2,7 +2,7 @@
 
 (function () {
   const DB_NAME = 'techsitemanager-offline';
-  const VERSION = 1;
+  const VERSION = 2;
   function open() {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, VERSION);
@@ -13,6 +13,7 @@
         if (!database.objectStoreNames.contains('operation-queue')) database.createObjectStore('operation-queue', { keyPath: 'id' });
         if (!database.objectStoreNames.contains('dead-letters')) database.createObjectStore('dead-letters', { keyPath: 'id' });
         if (!database.objectStoreNames.contains('pending-logout')) database.createObjectStore('pending-logout');
+        if (!database.objectStoreNames.contains('id-remaps')) database.createObjectStore('id-remaps', { keyPath: 'temporaryId' });
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -50,6 +51,47 @@
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
         tx.oncomplete = () => database.close();
+      });
+    },
+    async completeOperation(operationId, remap) {
+      const database = await open();
+      return new Promise((resolve, reject) => {
+        const stores = remap ? ['operation-queue', 'id-remaps'] : ['operation-queue'];
+        const tx = database.transaction(stores, 'readwrite');
+        tx.objectStore('operation-queue').delete(operationId);
+        if (remap) tx.objectStore('id-remaps').put(remap);
+        tx.oncomplete = () => { database.close(); resolve(); };
+        tx.onerror = () => { database.close(); reject(tx.error); };
+        tx.onabort = () => { database.close(); reject(tx.error); };
+      });
+    },
+    async rejectOperation(operation, rejection) {
+      const database = await open();
+      return new Promise((resolve, reject) => {
+        const tx = database.transaction(['operation-queue', 'dead-letters'], 'readwrite');
+        tx.objectStore('operation-queue').delete(operation.id);
+        tx.objectStore('dead-letters').put({ ...operation, ...rejection });
+        tx.oncomplete = () => { database.close(); resolve(); };
+        tx.onerror = () => { database.close(); reject(tx.error); };
+        tx.onabort = () => { database.close(); reject(tx.error); };
+      });
+    },
+    async retryDeadLetter(operationId) {
+      const database = await open();
+      return new Promise((resolve, reject) => {
+        const tx = database.transaction(['operation-queue', 'dead-letters'], 'readwrite');
+        const deadLetters = tx.objectStore('dead-letters');
+        const request = deadLetters.get(operationId);
+        request.onsuccess = () => {
+          if (!request.result) return;
+          const operation = { ...request.result };
+          delete operation.rejectedAt; delete operation.status; delete operation.reason;
+          tx.objectStore('operation-queue').put({ ...operation, attempts: 0 });
+          deadLetters.delete(operationId);
+        };
+        tx.oncomplete = () => { database.close(); resolve(); };
+        tx.onerror = () => { database.close(); reject(tx.error); };
+        tx.onabort = () => { database.close(); reject(tx.error); };
       });
     }
   });

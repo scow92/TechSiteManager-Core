@@ -18,7 +18,7 @@ module.exports = [
     files: ['public/**/*.js'],
     languageOptions: {
       sourceType: 'script',
-      globals: { ...globals.browser, OfflineStore: 'readonly' }
+      globals: { ...globals.browser, OfflineStore: 'readonly', OfflineSync: 'readonly' }
     }
   }
 ];

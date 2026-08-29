@@ -48,7 +48,7 @@ module.exports = function createApp(registry) {
   });
   app.use(express.json({ limit: '14mb', strict: true }));
   app.use(auth.session);
-  app.get('/api/health', (_req, res) => res.json({ status: registry.degraded.length ? 'degraded' : 'ready', pluginApiVersion: 1, providers: registry.providers.length, optionalPluginFailures: registry.degraded.length }));
+  app.get('/api/health', (_req, res) => res.json({ status: registry.degraded.length ? 'degraded' : 'ready', pluginApiVersion: 1, providers: registry.providers.length, exporters: registry.exporters.length, optionalPluginFailures: registry.degraded.length }));
   app.use('/api/auth', require('./routes/auth'));
   app.use('/api', require('./routes/imports')(registry));
   app.use('/api', require('./routes/core'));

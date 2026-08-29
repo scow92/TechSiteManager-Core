@@ -88,6 +88,21 @@ async function setup(page, base, suffix) {
       await page.waitForFunction(() => globalThis.OfflineStore.all('operation-queue').then((items) => items.length === 0));
       await page.reload();
       await page.getByText('Queued Demo Site').waitFor();
+      await page.getByRole('link', { name: 'Work Packages' }).click();
+      await page.getByLabel('Site').selectOption({ label: 'OFFLINE-DEMO-01 — Offline Demo Site' });
+      await page.getByLabel('Package reference').fill('PKG-ZERO-PLUGIN-01');
+      await page.getByLabel('Title').fill('Zero-plugin demonstration package');
+      await page.getByRole('button', { name: 'Add work package' }).click();
+      await page.getByRole('heading', { name: 'PKG-ZERO-PLUGIN-01' }).waitFor();
+      await page.getByLabel('Title').fill('Updated zero-plugin package');
+      await page.getByRole('button', { name: 'Save work package' }).click();
+      await page.getByText('Work package saved').waitFor();
+      await page.reload();
+      assert.equal(await page.getByLabel('Title').inputValue(), 'Updated zero-plugin package');
+      await page.getByRole('link', { name: 'Sites' }).click();
+      await page.getByRole('link', { name: 'OFFLINE-DEMO-01' }).click();
+      await page.getByRole('heading', { name: 'Racks' }).waitFor();
+      await page.getByRole('heading', { name: 'Distance samples' }).waitFor();
       await page.close();
       console.log('PASS zero-plugin browser flow');
     } finally { await stop(zero); }
@@ -107,6 +122,12 @@ async function setup(page, base, suffix) {
       await page.getByText('Import applied').waitFor();
       await page.getByRole('link', { name: 'Work Packages' }).click();
       await page.getByText('PKG-DEMO-100').waitFor();
+      const exported = await page.evaluate(async () => {
+        const link = [...globalThis.document.querySelectorAll('a')].find((entry) => entry.textContent === 'Fictional facility summary');
+        const response = await fetch(link.href);
+        return { status: response.status, disposition: response.headers.get('content-disposition'), body: await response.json() };
+      });
+      assert.equal(exported.status, 200); assert.match(exported.disposition, /PKG-DEMO-100\.facility\.json/); assert.equal(exported.body.segmentCount, 1);
       await page.close();
       console.log('PASS fictional-plugin browser import flow');
     } finally { await stop(fictional); }

@@ -1,7 +1,12 @@
 # Contributing
 
-Contributions are welcome after the repository owner selects a license and
-opens the project for public contribution.
+Contributions are welcome after the repository owner opens the project for
+public contribution.
+
+Unless explicitly stated otherwise, intentionally submitted contributions are
+provided under the Apache License, Version 2.0 (`Apache-2.0`), consistent with
+section 5 of the project licence. This does not override a separate written
+agreement with the copyright owner.
 
 Use fictional reproductions. Do not paste private source layouts, mappings,
 records, URLs, identifiers, credentials, logs, screenshots, migration details,

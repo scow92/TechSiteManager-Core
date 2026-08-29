@@ -5,7 +5,7 @@ const config = require('../config');
 const db = require('../db/knex');
 const { validateDraft } = require('./contracts');
 const { buildProposal, flatten, FIELD_COLUMNS } = require('./reconcile');
-const { boundedJson, knownKeys, string, object } = require('../lib/validation');
+const { boundedJson, knownKeys, string, integer, array, object } = require('../lib/validation');
 const { httpError } = require('../lib/errors');
 const audit = require('../lib/audit');
 
@@ -15,6 +15,29 @@ function uuid() { return crypto.randomUUID(); }
 function sha256(value) { return `sha256:${crypto.createHash('sha256').update(value).digest('hex')}`; }
 function canonicalHash(value) { return sha256(Buffer.from(JSON.stringify(value))); }
 function now() { return new Date().toISOString(); }
+
+function inputFields(provider, value) {
+  const supplied = object(value || {}, 'body.fields');
+  const descriptors = new Map((provider.input.fields || []).map((field) => [field.id, field]));
+  if (Object.keys(supplied).length > 20) throw httpError(422, 'too_many_input_fields', 'Too many input fields');
+  const result = {};
+  for (const key of Object.keys(supplied)) if (!descriptors.has(key)) throw httpError(422, 'unknown_input_field', 'Unknown provider input field', `body.fields.${key}`);
+  for (const descriptor of descriptors.values()) {
+    const valueAtField = supplied[descriptor.id];
+    if ((valueAtField === undefined || valueAtField === null || valueAtField === '') && descriptor.required) throw httpError(422, 'required_field', `body.fields.${descriptor.id} is required`, `body.fields.${descriptor.id}`);
+    if (valueAtField === undefined || valueAtField === null || valueAtField === '') continue;
+    if (['string', 'multiline', 'core-entity-selector'].includes(descriptor.type)) result[descriptor.id] = string(valueAtField, `body.fields.${descriptor.id}`, { required: true, max: descriptor.maxLength || (descriptor.type === 'multiline' ? 20_000 : 255) });
+    else if (descriptor.type === 'integer') result[descriptor.id] = integer(valueAtField, `body.fields.${descriptor.id}`, { required: true });
+    else if (descriptor.type === 'boolean') {
+      if (typeof valueAtField !== 'boolean') throw httpError(422, 'invalid_field', `body.fields.${descriptor.id} is invalid`, `body.fields.${descriptor.id}`);
+      result[descriptor.id] = valueAtField;
+    } else {
+      if (typeof valueAtField !== 'string' || !descriptor.options.includes(valueAtField)) throw httpError(422, 'invalid_field', `body.fields.${descriptor.id} is invalid`, `body.fields.${descriptor.id}`);
+      result[descriptor.id] = valueAtField;
+    }
+  }
+  return Object.freeze(result);
+}
 
 function frozenArtifact(provider, body) {
   knownKeys(body, ['content', 'contentEncoding', 'mediaType', 'externalReference', 'fields'], 'body');
@@ -27,13 +50,12 @@ function frozenArtifact(provider, body) {
   if (provider.input.type === 'file' && !provider.input.mediaTypes.includes(mediaType)) throw httpError(415, 'source_media_type_unsupported', 'Source media type is not supported');
   if (provider.input.type === 'pasted-text' && !['text/plain', 'text/html'].includes(mediaType)) throw httpError(415, 'source_media_type_unsupported', 'Source media type is not supported');
   const externalReference = string(body.externalReference, 'body.externalReference', { max: 255 });
-  const fields = object(body.fields || {}, 'body.fields');
-  if (Object.keys(fields).length > 20) throw httpError(422, 'too_many_input_fields', 'Too many input fields');
+  const fields = inputFields(provider, body.fields);
   return Object.freeze({
     schemaVersion: 'techsitemanager.io/source-artifact/v1', providerId: provider.id,
     connectorId: provider.input.type === 'file' ? 'core.file' : 'core.paste',
     contentHash: sha256(content), mediaType, receivedAt: now(), externalReference,
-    fields: Object.freeze({ ...fields }), content
+    fields, content
   });
 }
 
@@ -97,7 +119,7 @@ async function stage(registry, providerId, actorUserId, body) {
     knownKeys(body, ['externalReference', 'fields'], 'body');
     const connector = provider.connectorId && registry.connector(provider.connectorId);
     if (!connector) throw httpError(503, 'connector_not_available', 'This provider requires an unavailable source connector');
-    const reference = Object.freeze({ externalReference: string(body.externalReference, 'body.externalReference', { required: true, max: 255 }), fields: Object.freeze({ ...object(body.fields || {}, 'body.fields') }) });
+    const reference = Object.freeze({ externalReference: string(body.externalReference, 'body.externalReference', { required: true, max: 255 }), fields: inputFields(provider, body.fields) });
     const acquired = await callConnector(connector, reference);
     if (!acquired || !Buffer.isBuffer(acquired.content) || acquired.content.length > provider.input.maxBytes) throw httpError(502, 'connector_artifact_invalid', 'The external source returned an invalid artifact');
     artifact = Object.freeze({ schemaVersion: 'techsitemanager.io/source-artifact/v1', providerId: provider.id, connectorId: connector.id, contentHash: sha256(acquired.content), mediaType: string(acquired.mediaType, 'artifact.mediaType', { required: true, max: 128 }), receivedAt: now(), externalReference: reference.externalReference, fields: reference.fields, content: acquired.content });
@@ -162,6 +184,36 @@ function decisionFor(approval, proposalId, field) {
   return decision;
 }
 
+function validateApproval(approval, proposal) {
+  knownKeys(approval, ['schemaVersion', 'draftHash', 'targetVersions', 'fieldDecisions', 'absenceDecisions', 'acknowledgeWarnings'], 'approval');
+  if (approval.schemaVersion !== 'techsitemanager.io/import-approval/v1') throw httpError(422, 'approval_schema_version', 'Import approval schema is invalid');
+  string(approval.draftHash, 'approval.draftHash', { required: true, max: 71, pattern: /^sha256:[a-f0-9]{64}$/ });
+  const targetVersions = object(approval.targetVersions || {}, 'approval.targetVersions');
+  if (Object.keys(targetVersions).length > 20_000) throw httpError(422, 'approval_too_large', 'Import approval contains too many versions');
+  for (const [publicId, version] of Object.entries(targetVersions)) {
+    string(publicId, `approval.targetVersions.${publicId}`, { required: true, max: 36, pattern: /^[0-9a-f-]{36}$/i });
+    integer(version, `approval.targetVersions.${publicId}`, { required: true, min: 0 });
+  }
+  const fieldDecisions = object(approval.fieldDecisions || {}, 'approval.fieldDecisions');
+  const absenceDecisions = object(approval.absenceDecisions || {}, 'approval.absenceDecisions');
+  if (Object.keys(fieldDecisions).length > 50_000 || Object.keys(absenceDecisions).length > 20_000) throw httpError(422, 'approval_too_large', 'Import approval contains too many decisions');
+  const allowedFields = new Set(proposal.entityProposals.flatMap((entity) => entity.fields.map((field) => `${entity.proposalId}.${field.fieldPath}`)));
+  const allowedAbsences = new Set(proposal.absences.map((absence) => absence.proposalId));
+  for (const [key, decision] of Object.entries(fieldDecisions)) {
+    if (!allowedFields.has(key) || !['accept-source', 'keep-current', 'make-user-owned', 'return-to-source', 'defer'].includes(decision)) throw httpError(422, 'invalid_field_decision', 'Import field decision is invalid', key);
+  }
+  for (const [key, decision] of Object.entries(absenceDecisions)) {
+    if (!allowedAbsences.has(key) || !['keep-linked-absent', 'unlink-and-keep', 'defer'].includes(decision)) throw httpError(422, 'invalid_absence_decision', 'Import absence decision is invalid', key);
+  }
+  const warningCodes = new Set(proposal.warnings.map((warning) => warning.code));
+  const acknowledgements = array(approval.acknowledgeWarnings, 'approval.acknowledgeWarnings', { max: 1000 });
+  for (const [index, code] of acknowledgements.entries()) {
+    string(code, `approval.acknowledgeWarnings[${index}]`, { required: true, max: 128 });
+    if (!warningCodes.has(code)) throw httpError(422, 'unknown_warning_acknowledgement', 'Import warning acknowledgement is invalid');
+  }
+  return { targetVersions, acknowledgements };
+}
+
 async function upsertOwnership(trx, entity, link, field, decision, runId, currentValue) {
   const key = { entity_type: entity.entityType, entity_public_id: entity.entityPublicId, field_path: field.fieldPath };
   const existing = await trx('import_field_ownership').where(key).first();
@@ -222,21 +274,23 @@ async function updateEntity(trx, entity, approval, expectedVersion) {
 }
 
 async function apply(registry, draftId, actorUserId, approval) {
-  knownKeys(approval, ['schemaVersion', 'draftHash', 'targetVersions', 'fieldDecisions', 'absenceDecisions', 'acknowledgeWarnings'], 'approval');
-  if (approval.schemaVersion !== 'techsitemanager.io/import-approval/v1') throw httpError(422, 'approval_schema_version', 'Import approval schema is invalid');
+  object(approval, 'approval');
   const row = await db('import_drafts').where({ id: draftId, actor_user_id: actorUserId }).first();
   if (!row) throw httpError(404, 'draft_not_found', 'Import draft not found');
   if (row.expires_at <= now()) throw httpError(410, 'draft_expired', 'Import draft has expired');
   if (row.draft_hash !== approval.draftHash) throw httpError(409, 'draft_hash_mismatch', 'Import draft changed');
-  const expectedVersions = JSON.parse(row.target_versions_json);
-  if (JSON.stringify(approval.targetVersions || {}) !== JSON.stringify(expectedVersions)) throw httpError(409, 'stale_approval', 'Import approval versions do not match');
   const draft = JSON.parse(row.normalized_draft_json);
   const proposal = JSON.parse(row.proposal_json);
-  if (draft.warnings.some((warning) => warning.severity === 'blocking' && !(approval.acknowledgeWarnings || []).includes(warning.code))) throw httpError(422, 'blocking_warning_unacknowledged', 'Blocking import warnings must be acknowledged');
+  const validated = validateApproval(approval, proposal);
+  const expectedVersions = JSON.parse(row.target_versions_json);
+  const versionKeys = new Set([...Object.keys(validated.targetVersions), ...Object.keys(expectedVersions)]);
+  if ([...versionKeys].some((key) => validated.targetVersions[key] !== expectedVersions[key])) throw httpError(409, 'stale_approval', 'Import approval versions do not match');
+  if (draft.warnings.some((warning) => warning.severity === 'blocking' && !validated.acknowledgements.includes(warning.code))) throw httpError(422, 'blocking_warning_unacknowledged', 'Blocking import warnings must be acknowledged');
   if (!registry.provider(draft.providerId)) throw httpError(409, 'provider_unavailable', 'Import provider is no longer available');
 
   return db.transaction(async (trx) => {
     const lockedDraft = await trx('import_drafts').where({ id: draftId, actor_user_id: actorUserId }).first();
+    if (!lockedDraft) throw httpError(404, 'draft_not_found', 'Import draft not found');
     if (lockedDraft.applied_run_id) {
       const prior = await trx('import_runs').where({ id: lockedDraft.applied_run_id }).first();
       return resultFromRun(prior);
@@ -313,9 +367,9 @@ async function apply(registry, draftId, actorUserId, approval) {
       } else if (decision !== 'defer') throw httpError(422, 'invalid_absence_decision', 'Import absence decision is invalid');
     }
     await trx('import_sources').where({ id: source.id }).update({ last_seen_at: now(), absent_at: null });
-    await trx('import_runs').where({ id: runId }).update({ status: 'applied', counts_json: JSON.stringify(counts), finished_at: now() });
-    await trx('import_drafts').where({ id: draftId }).update({ applied_run_id: runId });
     const workPackageProposal = proposal.entityProposals.find((entry) => entry.entityType === 'work_package');
+    await trx('import_runs').where({ id: runId }).update({ status: 'applied', primary_entity_public_id: workPackageProposal.entityPublicId, counts_json: JSON.stringify(counts), finished_at: now() });
+    await trx('import_drafts').where({ id: draftId }).update({ applied_run_id: runId });
     await audit.record(trx, actorUserId, 'import.apply', 'work_package', workPackageProposal.entityPublicId, { providerId: draft.providerId, runId, count: records.length });
     const run = await trx('import_runs').where({ id: runId }).first();
     return resultFromRun(run, workPackageProposal.entityPublicId);
@@ -326,7 +380,7 @@ function resultFromRun(run, workPackagePublicId) {
   return {
     schemaVersion: 'techsitemanager.io/import-result/v1', runId: run.public_id,
     status: run.status === 'applied' ? 'applied' : run.status,
-    workPackagePublicId: workPackagePublicId || null,
+    workPackagePublicId: workPackagePublicId || run.primary_entity_public_id || null,
     counts: JSON.parse(run.counts_json), warningCodes: JSON.parse(run.warning_codes_json),
     appliedAt: run.finished_at, attemptCount: run.attempt_count
   };
