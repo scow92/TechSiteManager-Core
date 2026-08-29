@@ -6,10 +6,13 @@ desktop sidebar, an off-canvas mobile navigation drawer, consistent surfaces,
 forms, cards, badges, empty states, loading/error feedback, synchronization
 status, focus treatment, and print-safe presentation.
 
-Visual parity applies to shared generic capabilities. It does not restore the
-original browser architecture or source-specific workflows. The browser remains
-native ES modules, provider interpretation remains server-side, and the core
-loads no plugin browser scripts.
+Visual parity applies to shared generic capabilities. The Home hierarchy,
+context selectors, contextual navigation sections, content measure, responsive
+drawer, record lists, detail sections, work-item tabs, connection tables, rack
+elevations, forms, import preview and result states now follow the original
+application's layout and interaction patterns. The browser remains native ES
+modules, provider interpretation remains server-side, and the core loads no
+plugin browser scripts.
 
 Intentional differences are:
 
@@ -26,10 +29,20 @@ Intentional differences are:
   offline durability behavior remain authoritative where exact geometry would
   conflict with them.
 
-`npm run test:visual` exercises the shell with fictional data at desktop,
-tablet, and mobile widths. It covers dark/light themes, zero-plugin and
-fictional-plugin operation, initial loading, setup, empty and error states,
-dashboard/search, room and rack previews, nested work-package records, mobile
-navigation, offline indication, and import reconciliation preview.
-Screenshots are written to a disposable directory outside the repository;
-structural assertions enforce the shared visual tokens and responsive geometry.
+`npm run test:visual` exercises the shell using only fictional data. Home and
+work-package detail screenshots are captured in both themes at 1440×1000,
+820×1180, 1180×820, 390×844, and 844×390. Additional desktop captures cover
+account setup, sign-in, loading, empty, validation and safe-error states,
+search, site lists, site overview, rooms, rack elevations, termination points,
+devices, distances, work items, connections, consumables, provider selection,
+reconciliation, import result, and settings. Mobile captures cover the drawer,
+header/footer shell, touch layout, and offline indicator.
+
+Every run writes reviewable PNGs to a disposable directory outside the public
+repository. CI compares a 48×48 RGB perceptual signature of each screenshot
+against `server/test/visual-baselines.json`. A capture fails when more than 4%
+of sampled cells exceed a 24-channel delta or the mean channel delta exceeds 5.
+The compact signatures make material layout drift fail CI without placing
+private-reference or generated screenshot artifacts in the public source tree.
+Update signatures only with `UPDATE_VISUAL_BASELINES=1 npm run test:visual`
+after reviewing the complete fictional screenshot matrix.

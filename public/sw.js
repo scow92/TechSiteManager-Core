@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE = 'techsitemanager-shell-v5';
+const CACHE = 'techsitemanager-shell-v6';
 const SHELL = [
   '/', '/index.html', '/css/styles.css', '/manifest.json',
   '/js/idb.js', '/js/offline.js', '/js/api.js', '/js/auth.js', '/js/dom.js', '/js/main.js', '/js/offline-ui.js',

@@ -32,7 +32,7 @@ async function start(configName) {
   const base = `http://127.0.0.1:${port}`;
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (child.exitCode !== null) throw new Error(`Server exited before readiness: ${diagnostics.slice(-500)}`);
-    try { if ((await fetch(`${base}/api/health`)).ok) return { child, base, dataDir }; } catch { /* retry */ }
+    try { if ((await fetch(`${base}/api/health`)).ok) return { child, base, dataDir, port }; } catch { /* retry */ }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   child.kill('SIGTERM');
@@ -47,14 +47,36 @@ async function stop(instance) {
   fs.rmSync(instance.dataDir, { recursive: true, force: true });
 }
 
+async function restart(instance, configName) {
+  if (instance.child.exitCode === null) {
+    instance.child.kill('SIGTERM');
+    await new Promise((resolve) => { instance.child.once('exit', resolve); setTimeout(resolve, 3000); });
+  }
+  const child = spawn(process.execPath, ['server/server.js'], {
+    cwd: root,
+    env: { ...process.env, NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(instance.port), DATA_DIR: instance.dataDir, DB_FILE: path.join(instance.dataDir, 'test.db'), PLUGIN_CONFIG_FILE: path.join(root, 'config', `${configName}.json`) },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  let diagnostics = '';
+  child.stdout.on('data', (chunk) => { diagnostics += chunk.toString(); });
+  child.stderr.on('data', (chunk) => { diagnostics += chunk.toString(); });
+  instance.child = child;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (child.exitCode !== null) throw new Error(`Server exited during restart: ${diagnostics.slice(-500)}`);
+    try { if ((await fetch(`${instance.base}/api/health`)).ok) return; } catch { /* retry */ }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Server did not restart: ${diagnostics.slice(-500)}`);
+}
+
 async function setup(page, base, suffix) {
   await page.goto(base);
   await page.getByLabel('Username').fill(`admin-${suffix}`);
   await page.getByLabel('Password').fill(`fictional-browser-password-${suffix}`);
   await page.getByLabel('Display name').fill('Browser Administrator');
   await page.getByRole('button', { name: 'Create account' }).click();
-  await page.getByRole('link', { name: 'Import' }).waitFor();
-  await page.getByText(/No work packages have been created yet/).waitFor();
+  await page.getByRole('heading', { name: 'Home', exact: true }).waitFor();
+  await page.getByText(/No active work packages yet/).waitFor();
 }
 
 (async () => {
@@ -64,21 +86,21 @@ async function setup(page, base, suffix) {
     try {
       const page = await browser.newPage();
       await setup(page, zero.base, 'zero');
-      await page.getByRole('link', { name: 'Import' }).click();
+      await page.goto(`${zero.base}/#import`);
       await page.waitForTimeout(500);
       assert.match(await page.locator('body').innerText(), /No import providers are installed\./);
-      assert.equal(await page.getByRole('combobox').count(), 0);
-      await page.getByRole('link', { name: 'Sites' }).click();
+      assert.equal(await page.getByLabel('Provider').count(), 0);
+      await page.getByRole('link', { name: 'manage' }).click();
       await page.getByLabel('Code').fill('OFFLINE-DEMO-01');
       await page.getByLabel('Name').fill('Offline Demo Site');
       await page.getByRole('button', { name: 'Add site' }).click();
-      await page.getByText('Offline Demo Site').waitFor();
+      await page.getByRole('heading', { name: 'Offline Demo Site', exact: true }).waitFor();
       await page.evaluate(() => navigator.serviceWorker.ready);
       await page.reload();
-      await page.getByText('Offline Demo Site').waitFor();
+      await page.getByRole('heading', { name: 'Offline Demo Site', exact: true }).waitFor();
       await page.context().setOffline(true);
       await page.reload();
-      await page.getByText('Offline Demo Site').waitFor();
+      await page.getByRole('heading', { name: 'Offline Demo Site', exact: true }).waitFor();
       await page.getByLabel('Code').fill('OFFLINE-QUEUED-02');
       await page.getByLabel('Name').fill('Queued Demo Site');
       await page.getByRole('button', { name: 'Add site' }).click();
@@ -87,21 +109,24 @@ async function setup(page, base, suffix) {
       await page.context().setOffline(false);
       await page.waitForFunction(() => globalThis.OfflineStore.all('operation-queue').then((items) => items.length === 0));
       await page.reload();
-      await page.getByText('Queued Demo Site').waitFor();
-      await page.getByRole('link', { name: 'Work Packages' }).click();
-      await page.getByLabel('Site').selectOption({ label: 'OFFLINE-DEMO-01 — Offline Demo Site' });
+      await page.getByRole('heading', { name: 'Queued Demo Site', exact: true }).waitFor();
+      await page.locator('[data-route="home"]').click();
+      await page.locator('header').getByRole('button', { name: 'Add work package' }).click();
+      await page.locator('select[name="sitePublicId"]').selectOption({ label: 'OFFLINE-DEMO-01 — Offline Demo Site' });
       await page.getByLabel('Package reference').fill('PKG-ZERO-PLUGIN-01');
       await page.getByLabel('Title').fill('Zero-plugin demonstration package');
-      await page.getByRole('button', { name: 'Add work package' }).click();
+      await page.locator('form.create-package').getByRole('button', { name: 'Add work package' }).click();
       await page.getByRole('heading', { name: 'PKG-ZERO-PLUGIN-01' }).waitFor();
       await page.getByLabel('Title').fill('Updated zero-plugin package');
       await page.getByRole('button', { name: 'Save work package' }).click();
       await page.getByText('Work package saved').waitFor();
       await page.reload();
       assert.equal(await page.getByLabel('Title').inputValue(), 'Updated zero-plugin package');
-      await page.getByRole('link', { name: 'Sites' }).click();
+      await page.getByRole('link', { name: 'manage' }).click();
       await page.getByRole('link', { name: 'OFFLINE-DEMO-01' }).click();
-      await page.getByRole('heading', { name: 'Racks' }).waitFor();
+      await page.locator('[data-site-view="racks"]').click();
+      await page.getByText('No racks recorded').waitFor();
+      await page.locator('[data-site-view="distances"]').click();
       await page.getByRole('heading', { name: 'Distance samples' }).waitFor();
       await page.close();
       console.log('PASS zero-plugin browser flow');
@@ -111,7 +136,7 @@ async function setup(page, base, suffix) {
     try {
       const page = await browser.newPage();
       await setup(page, fictional.base, 'fictional');
-      await page.getByRole('link', { name: 'Import' }).click();
+      await page.goto(`${fictional.base}/#import`);
       await page.getByLabel('Provider').selectOption('example.fictional-facility.json');
       const plan = fs.readFileSync(path.join(root, 'examples', 'fictional-plugin', 'example-plan.json'), 'utf8');
       await page.getByLabel('Source content').fill(plan);
@@ -119,17 +144,55 @@ async function setup(page, base, suffix) {
       await page.getByRole('button', { name: 'Validate and preview' }).click();
       await page.getByText('Normalized preview').waitFor();
       await page.getByRole('button', { name: 'Approve import' }).click();
-      await page.getByText('Import applied').waitFor();
-      await page.getByRole('link', { name: 'Work Packages' }).click();
-      await page.getByText('PKG-DEMO-100').waitFor();
+      await page.getByRole('heading', { name: 'Import applied', exact: true }).waitFor();
+      const open = page.getByRole('link', { name: 'Open work package' });
+      const href = await open.getAttribute('href');
+      assert.match(href || '', /^#package\/[0-9a-f-]{36}$/);
+      const packagePublicId = (href || '').slice('#package/'.length);
+      await open.click();
+      await page.getByRole('heading', { name: 'PKG-DEMO-100', exact: true }).waitFor();
+      assert.equal(new URL(page.url()).hash, `#package/${packagePublicId}`);
+
+      await page.locator('main').getByRole('link', { name: 'Home', exact: true }).click();
+      await page.getByRole('link', { name: 'PKG-DEMO-100', exact: true }).click();
+      await page.getByRole('heading', { name: 'PKG-DEMO-100', exact: true }).waitFor();
+      await page.locator('main').getByRole('link', { name: 'Home', exact: true }).click();
+      await page.getByLabel('Work Package Search').fill('ITEM-DEMO-A');
+      await page.getByRole('link', { name: 'PKG-DEMO-100', exact: true }).click();
+      await page.getByRole('heading', { name: 'PKG-DEMO-100', exact: true }).waitFor();
+
+      await page.reload();
+      await page.getByRole('heading', { name: 'PKG-DEMO-100', exact: true }).waitFor();
+      await restart(fictional, 'fictional-plugin');
+      await page.reload();
+      await page.getByRole('heading', { name: 'PKG-DEMO-100', exact: true }).waitFor();
+
       const exported = await page.evaluate(async () => {
         const link = [...globalThis.document.querySelectorAll('a')].find((entry) => entry.textContent === 'Fictional facility summary');
         const response = await fetch(link.href);
         return { status: response.status, disposition: response.headers.get('content-disposition'), body: await response.json() };
       });
       assert.equal(exported.status, 200); assert.match(exported.disposition, /PKG-DEMO-100\.facility\.json/); assert.equal(exported.body.segmentCount, 1);
+
+      await page.locator('[data-route="home"]').click();
+      await page.getByLabel('Work Package Search').fill('ITEM-DEMO-A');
+      await page.getByRole('link', { name: 'PKG-DEMO-100', exact: true }).waitFor();
+
+      await restart(fictional, 'zero-plugins');
+      await page.reload();
+      await page.getByLabel('Work Package Search').fill('ITEM-DEMO-A');
+      await page.getByRole('link', { name: 'PKG-DEMO-100', exact: true }).click();
+      await page.getByRole('heading', { name: 'PKG-DEMO-100', exact: true }).waitFor();
+      await page.locator('[data-route="import"]').click();
+      await page.getByText('No import providers are installed.').waitFor();
+
+      await page.goto(`${fictional.base}/#package/00000000-0000-4000-8000-000000000000`);
+      await page.getByRole('heading', { name: 'Work package unavailable', exact: true }).waitFor();
+      assert.match(await page.getByRole('alert').innerText(), /Work package not found/);
+      await page.getByRole('link', { name: 'Return to Work Packages' }).click();
+      await page.getByRole('heading', { name: 'Home', exact: true }).waitFor();
       await page.close();
-      console.log('PASS fictional-plugin browser import flow');
+      console.log('PASS fictional-plugin import, navigation, reload and zero-plugin restart flow');
     } finally { await stop(fictional); }
   } finally { await browser.close(); }
 })().catch((error) => { console.error(error.stack || error.message); process.exitCode = 1; });

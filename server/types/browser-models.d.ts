@@ -2,7 +2,7 @@ export interface User { readonly publicId: string; readonly username: string; re
 export interface AuthStatus { readonly user: User | null; readonly setupNeeded: boolean; }
 export interface Site { readonly publicId: string; readonly code: string; readonly name: string; readonly description: string; }
 export interface ExporterDescriptor { readonly id: string; readonly label: string; }
-export interface WorkPackageSummary { readonly publicId: string; readonly packageReference: string; readonly title: string; readonly status: string; readonly siteCode: string; readonly siteName: string; readonly externalReference: string | null; readonly projectReference: string | null; }
+export interface WorkPackageSummary { readonly publicId: string; readonly packageReference: string; readonly title: string; readonly status: string; readonly sitePublicId: string; readonly siteCode: string; readonly siteName: string; readonly externalReference: string | null; readonly projectReference: string | null; }
 export interface SearchRecord extends Partial<WorkPackageSummary> { readonly entityType?: string; readonly reference?: string; }
 export interface SiteRecord {
   readonly publicId: string;
@@ -19,11 +19,11 @@ export interface SiteRecord {
   readonly rackUnit?: number | null;
   readonly side?: string;
 }
-export interface WorkItem { readonly itemReference: string; readonly title: string; readonly status: string; }
-export interface Segment { readonly fromEndpoint: string; readonly toEndpoint: string; }
-export interface Circuit { readonly circuitReference: string; readonly media: string; readonly segments: readonly Segment[]; }
-export interface Requirement { readonly description: string; readonly quantityRequired: number; readonly unit: string | null; }
-export interface WorkPackage extends WorkPackageSummary { readonly description: string; readonly leadAssignee: string | null; readonly assignees: readonly string[]; readonly version: number; readonly workItems: readonly WorkItem[]; readonly circuits: readonly Circuit[]; readonly consumableRequirements: readonly Requirement[]; }
+export interface WorkItem { readonly publicId: string; readonly itemReference: string; readonly title: string; readonly description: string; readonly status: string; readonly sequence: number; readonly version: number; }
+export interface Segment { readonly publicId: string; readonly segmentReference: string; readonly sequence: number; readonly fromEndpoint: string; readonly toEndpoint: string; readonly lengthMetres: number | null; readonly notes: string; readonly version: number; }
+export interface Circuit { readonly publicId: string; readonly circuitReference: string; readonly description: string; readonly media: string; readonly status: string; readonly version: number; readonly segments: readonly Segment[]; }
+export interface Requirement { readonly publicId: string; readonly cataloguePublicId: string | null; readonly description: string; readonly quantityRequired: number; readonly unit: string | null; readonly version: number; }
+export interface WorkPackage { readonly publicId: string; readonly site: { readonly publicId: string; readonly code: string; readonly name: string; }; readonly packageReference: string; readonly externalReference: string | null; readonly projectReference: string | null; readonly title: string; readonly description: string; readonly status: string; readonly leadAssignee: string | null; readonly assignees: readonly string[]; readonly version: number; readonly workItems: readonly WorkItem[]; readonly circuits: readonly Circuit[]; readonly consumableRequirements: readonly Requirement[]; }
 export interface DescriptorField { readonly id: string; readonly label: string; readonly type: 'string' | 'multiline' | 'integer' | 'boolean' | 'enum' | 'core-entity-selector'; readonly required?: boolean; readonly maxLength?: number; readonly options?: readonly string[]; }
 export interface ProviderDescriptor { readonly id: string; readonly label: string; readonly input: { readonly type: 'file' | 'pasted-text' | 'external-reference'; readonly maxBytes: number; readonly mediaTypes: readonly string[]; readonly fields: readonly DescriptorField[]; }; }
 export interface ReconciliationField { readonly fieldPath: string; readonly currentValue: unknown; readonly sourceValue: unknown; readonly ownership: string; readonly conflict: boolean; readonly recommended: string; readonly changed: boolean; }
@@ -31,3 +31,5 @@ export interface ReconciliationEntity { readonly proposalId: string; readonly en
 export interface ReconciliationAbsence { readonly proposalId: string; readonly entityType: string; readonly sourceRecordKey: string; readonly choices: readonly string[]; }
 export interface SourceWarning { readonly code: string; readonly severity: string; readonly count: number | null; }
 export interface ReconciliationProposal { readonly draftId: string; readonly draftHash: string; readonly targetVersions: Readonly<Record<string, number>>; readonly entityProposals: readonly ReconciliationEntity[]; readonly absences: readonly ReconciliationAbsence[]; readonly warnings: readonly SourceWarning[]; }
+export interface ImportResultCounts { readonly created: number; readonly updated: number; readonly unchanged: number; readonly absent: number; readonly unlinked: number; readonly conflicted: number; }
+export interface ImportResult { readonly schemaVersion: 'techsitemanager.io/import-result/v1'; readonly runId: string; readonly status: string; readonly workPackagePublicId: string | null; readonly counts: ImportResultCounts; readonly warningCodes: readonly string[]; readonly appliedAt: string | null; readonly attemptCount: number; }

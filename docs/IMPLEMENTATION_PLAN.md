@@ -86,3 +86,8 @@ or private repository details.
   behavior without plugin browser code.
 - [x] Add fictional Playwright visual-state coverage for desktop, tablet,
   mobile, dark/light, offline, and reconciliation preview.
+- [x] Restore original-style Home search hierarchy, contextual site/work-package
+  navigation, sectioned package views, rack elevations, and explicit import
+  result actions while retaining generic terminology and server-only providers.
+- [x] Enforce deterministic visual drift thresholds across phone portrait and
+  landscape, tablet portrait and landscape, and desktop captures in both themes.

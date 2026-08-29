@@ -9,7 +9,19 @@ const { spawn } = require('node:child_process');
 const { chromium } = require('playwright');
 
 const root = path.join(__dirname, '..', '..');
+const baselineFile = path.join(__dirname, 'visual-baselines.json');
 const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), 'tsm-visual-artifacts-'));
+const updateBaselines = process.env.UPDATE_VISUAL_BASELINES === '1';
+const thresholds = { sampleSize: 48, channelDelta: 24, changedSampleRatio: 0.04, meanChannelDelta: 5 };
+const expected = fs.existsSync(baselineFile) ? JSON.parse(fs.readFileSync(baselineFile, 'utf8')) : { version: 1, thresholds, captures: {} };
+const observed = { version: 1, thresholds, captures: {} };
+const viewports = {
+  desktop: { width: 1440, height: 1000 },
+  'tablet-portrait': { width: 820, height: 1180 },
+  'tablet-landscape': { width: 1180, height: 820 },
+  'iphone-portrait': { width: 390, height: 844 },
+  'iphone-landscape': { width: 844, height: 390 }
+};
 
 function availablePort() {
   return new Promise((resolve, reject) => {
@@ -52,7 +64,7 @@ async function setup(page, suffix) {
   await page.getByLabel('Password').fill(`fictional-visual-password-${suffix}`);
   await page.getByLabel('Display name').fill('Visual Test Administrator');
   await page.getByRole('button', { name: 'Create account' }).click();
-  await page.getByRole('heading', { name: 'Work Packages', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Home', exact: true }).waitFor();
 }
 
 async function seedSharedState(page) {
@@ -78,8 +90,72 @@ async function seedSharedState(page) {
   });
 }
 
-async function screenshot(page, name) {
-  await page.screenshot({ path: path.join(artifacts, `${name}.png`), fullPage: true });
+async function imageFingerprint(page, png) {
+  return page.evaluate(async ({ base64, sampleSize }) => {
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+    const bitmap = await globalThis.createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+    const canvas = new globalThis.OffscreenCanvas(sampleSize, sampleSize);
+    const context = canvas.getContext('2d', { alpha: false });
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(bitmap, 0, 0, sampleSize, sampleSize);
+    const pixels = context.getImageData(0, 0, sampleSize, sampleSize).data;
+    let rgb = '';
+    for (let index = 0; index < pixels.length; index += 4) rgb += String.fromCharCode(pixels[index], pixels[index + 1], pixels[index + 2]);
+    return { width: bitmap.width, height: bitmap.height, rgb: btoa(rgb) };
+  }, { base64: png.toString('base64'), sampleSize: thresholds.sampleSize });
+}
+
+async function capture(page, name) {
+  await page.evaluate(() => new Promise((resolve) => globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve))));
+  const png = await page.screenshot({ animations: 'disabled', caret: 'hide' });
+  fs.writeFileSync(path.join(artifacts, `${name}.png`), png);
+  const fingerprint = await imageFingerprint(page, png);
+  observed.captures[name] = fingerprint;
+  if (updateBaselines) return;
+  const baseline = expected.captures[name];
+  assert.ok(baseline, `Missing visual baseline for ${name}; run UPDATE_VISUAL_BASELINES=1 npm run test:visual after review`);
+  assert.equal(fingerprint.width, baseline.width, `${name} viewport width changed`);
+  assert.equal(fingerprint.height, baseline.height, `${name} viewport height changed`);
+  const actualRgb = Buffer.from(fingerprint.rgb, 'base64');
+  const expectedRgb = Buffer.from(baseline.rgb, 'base64');
+  assert.equal(actualRgb.length, expectedRgb.length, `${name} visual sample shape changed`);
+  let changed = 0;
+  let totalDelta = 0;
+  for (let index = 0; index < actualRgb.length; index += 3) {
+    const delta = Math.max(Math.abs(actualRgb[index] - expectedRgb[index]), Math.abs(actualRgb[index + 1] - expectedRgb[index + 1]), Math.abs(actualRgb[index + 2] - expectedRgb[index + 2]));
+    totalDelta += delta;
+    if (delta > thresholds.channelDelta) changed += 1;
+  }
+  const samples = actualRgb.length / 3;
+  const changedRatio = changed / samples;
+  const meanDelta = totalDelta / samples;
+  assert.ok(changedRatio <= thresholds.changedSampleRatio, `${name} changed ${(changedRatio * 100).toFixed(2)}% of visual samples (limit ${(thresholds.changedSampleRatio * 100).toFixed(2)}%)`);
+  assert.ok(meanDelta <= thresholds.meanChannelDelta, `${name} mean channel delta ${meanDelta.toFixed(2)} exceeded ${thresholds.meanChannelDelta}`);
+}
+
+async function route(page, url, heading, stableText) {
+  await page.goto(url);
+  // Hash navigation retains the previous DOM while asynchronous route data is
+  // loading. A reload gives each deterministic capture a blank render boundary
+  // so a shared heading cannot satisfy the wait from the previous subview.
+  await page.reload();
+  await page.getByRole('heading', { name: heading, exact: true }).first().waitFor();
+  if (stableText) await page.getByText(stableText, { exact: true }).first().waitFor();
+}
+
+async function captureResponsiveMatrix(page, base, shared) {
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate((value) => localStorage.setItem('tsm-theme', value), theme);
+    for (const [viewportName, viewport] of Object.entries(viewports)) {
+      await page.setViewportSize(viewport);
+      await page.reload();
+      await route(page, `${base}/#home`, 'Home');
+      await capture(page, `home-${viewportName}-${theme}`);
+      await route(page, `${base}/#package/${shared.packagePublicId}/details`, 'PKG-VISUAL-001', 'Work package details');
+      await capture(page, `package-details-${viewportName}-${theme}`);
+    }
+  }
 }
 
 (async () => {
@@ -87,111 +163,113 @@ async function screenshot(page, name) {
   try {
     const zero = await start('zero-plugins');
     try {
-      const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: 'dark' });
+      const context = await browser.newContext({ viewport: viewports.desktop, colorScheme: 'dark', reducedMotion: 'reduce' });
       const page = await context.newPage();
-      await page.route('**/api/auth/status', async (route) => {
-        const response = await route.fetch();
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        await route.fulfill({ response });
+      await page.route('**/api/auth/status', async (requestRoute) => {
+        const response = await requestRoute.fetch();
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await requestRoute.fulfill({ response });
       });
       const navigation = page.goto(zero.base, { waitUntil: 'domcontentloaded' });
       await page.locator('.loading').waitFor();
-      await screenshot(page, 'zero-loading-desktop-dark');
+      await capture(page, 'loading-desktop-dark');
       await navigation;
-      await page.getByRole('heading', { name: /Welcome/ }).waitFor();
+      await page.getByRole('heading', { name: /create your admin account/ }).waitFor();
       await page.unroute('**/api/auth/status');
-      await screenshot(page, 'zero-setup-desktop-dark');
+      await capture(page, 'account-creation-desktop-dark');
       await setup(page, 'zero');
-      await page.getByText(/No work packages have been created yet/).waitFor();
-      await screenshot(page, 'zero-empty-home-desktop-dark');
+      await page.getByText('No active work packages yet.').waitFor();
+      await capture(page, 'empty-home-desktop-dark');
 
       const shared = await seedSharedState(page);
       await page.reload();
-      await page.getByRole('heading', { name: 'PKG-VISUAL-001' }).waitFor();
-      await screenshot(page, 'zero-dashboard-desktop-dark');
-      await page.getByLabel('Search records').fill('ITEM-VISUAL-1');
-      await page.getByRole('heading', { name: 'PKG-VISUAL-001' }).waitFor();
-      await screenshot(page, 'zero-search-desktop-dark');
-      await page.goto(`${zero.base}/#site/${shared.sitePublicId}`);
-      await page.getByRole('heading', { name: 'Rack previews' }).waitFor();
-      await screenshot(page, 'zero-site-room-rack-desktop-dark');
-      await page.goto(`${zero.base}/#package/${shared.packagePublicId}`);
-      await page.getByRole('heading', { name: 'Work items' }).waitFor();
-      await screenshot(page, 'zero-package-detail-desktop-dark');
+      await route(page, `${zero.base}/#home`, 'Home');
+      await capture(page, 'dashboard-desktop-dark');
+      await page.getByLabel('Work Package Search').fill('ITEM-VISUAL-1');
+      await page.getByRole('link', { name: 'PKG-VISUAL-001', exact: true }).waitFor();
+      await capture(page, 'search-results-desktop-dark');
 
-      const desktop = await page.evaluate(() => {
-        const sidebar = globalThis.document.querySelector('.sidebar');
-        const content = globalThis.document.querySelector('.content');
-        const panel = globalThis.document.querySelector('.panel');
-        return { sidebar: sidebar && sidebar.getBoundingClientRect(), content: content && content.getBoundingClientRect(), bodyBackground: globalThis.getComputedStyle(globalThis.document.body).backgroundColor, panelRadius: panel && globalThis.getComputedStyle(panel).borderRadius };
-      });
-      assert.ok(desktop.sidebar && Math.abs(desktop.sidebar.width - 244) < 1);
-      assert.ok(desktop.content && desktop.content.x >= 244);
-      assert.equal(desktop.bodyBackground, 'rgb(15, 20, 25)');
-      assert.equal(desktop.panelRadius, '10px');
+      const majorRoutes = [
+        ['sites', 'Sites', 'sites-list', 'Add site'],
+        [`site/${shared.sitePublicId}/overview`, 'LAB-VISUAL-01 — Fictional Visual Lab', 'site-overview', 'Rack previews'],
+        [`site/${shared.sitePublicId}/rooms`, 'LAB-VISUAL-01 — Fictional Visual Lab', 'site-rooms', 'Rooms'],
+        [`site/${shared.sitePublicId}/racks`, 'LAB-VISUAL-01 — Fictional Visual Lab', 'site-racks-elevations', 'Rack elevations'],
+        [`site/${shared.sitePublicId}/termination-points`, 'LAB-VISUAL-01 — Fictional Visual Lab', 'site-termination-points', 'Termination points'],
+        [`site/${shared.sitePublicId}/devices`, 'LAB-VISUAL-01 — Fictional Visual Lab', 'site-devices', 'Devices'],
+        [`site/${shared.sitePublicId}/distances`, 'LAB-VISUAL-01 — Fictional Visual Lab', 'site-distances', 'Distance samples'],
+        [`package/${shared.packagePublicId}/details`, 'PKG-VISUAL-001', 'package-details', 'Work package details'],
+        [`package/${shared.packagePublicId}/work-items`, 'PKG-VISUAL-001', 'package-work-items', 'Add work item'],
+        [`package/${shared.packagePublicId}/connections`, 'PKG-VISUAL-001', 'package-connections', 'Add circuit'],
+        [`package/${shared.packagePublicId}/consumables`, 'PKG-VISUAL-001', 'package-consumables', 'Add consumable requirement'],
+        ['import', 'Import', 'import-no-provider', 'No import providers are installed.'],
+        ['settings', 'Settings', 'settings', 'Appearance']
+      ];
+      for (const [hash, heading, name, stableText] of majorRoutes) {
+        await route(page, `${zero.base}/#${hash}`, heading, stableText);
+        await capture(page, `${name}-desktop-dark`);
+      }
 
-      await page.getByRole('link', { name: 'Import' }).click();
-      await page.getByText('No import providers are installed.').waitFor();
-      await screenshot(page, 'zero-import-empty-desktop-dark');
-      await page.getByRole('button', { name: 'Theme: system' }).click();
-      assert.equal(await page.locator('html').getAttribute('data-theme'), 'light');
-      await screenshot(page, 'zero-import-empty-desktop-light');
+      await route(page, `${zero.base}/#package/00000000-0000-4000-8000-000000000000`, 'Work package unavailable');
+      await capture(page, 'missing-record-error-desktop-dark');
 
-      await page.setViewportSize({ width: 1024, height: 768 });
+      await page.setViewportSize(viewports['iphone-portrait']);
       await page.reload();
-      await page.getByRole('heading', { name: 'Import', exact: true }).waitFor();
-      assert.equal(await page.locator('.sidebar').isVisible(), true);
-      await screenshot(page, 'zero-import-empty-tablet-light');
-
-      await page.setViewportSize({ width: 390, height: 844 });
-      await page.reload();
-      await page.getByRole('heading', { name: 'Import', exact: true }).waitFor();
-      assert.equal(await page.locator('.mobile-toolbar').isVisible(), true);
+      await route(page, `${zero.base}/#home`, 'Home');
       await page.getByRole('button', { name: 'Show navigation' }).click();
-      assert.equal(await page.locator('.nav-scrim').isVisible(), true);
-      const mobileSidebar = await page.locator('.sidebar').boundingBox();
-      assert.ok(mobileSidebar && mobileSidebar.width <= 390 * .84 + 1);
-      await screenshot(page, 'zero-navigation-mobile-light');
-      await page.mouse.click(380, 420);
-      await page.locator('#shell.nav-collapsed').waitFor();
-
+      await capture(page, 'navigation-drawer-iphone-portrait-dark');
+      await page.mouse.click(382, 430);
       await page.evaluate(() => navigator.serviceWorker.ready);
       await context.setOffline(true);
       await page.locator('.connection-status.offline').waitFor();
-      await screenshot(page, 'zero-offline-shell-mobile-light');
+      await capture(page, 'offline-status-iphone-portrait-dark');
       await context.setOffline(false);
-      await context.close();
 
-      const errorContext = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: 'block' });
-      const errorPage = await errorContext.newPage();
-      await errorPage.route('**/api/auth/status', (route) => route.abort('failed'));
-      await errorPage.goto(zero.base, { waitUntil: 'domcontentloaded' });
-      await errorPage.locator('.error').waitFor();
-      await screenshot(errorPage, 'zero-error-desktop-dark');
-      await errorContext.close();
-      console.log('PASS zero-plugin visual states');
+      await page.setViewportSize(viewports.desktop);
+      await page.reload();
+      await page.getByRole('button', { name: 'Sign out' }).click();
+      await page.getByRole('heading', { name: 'Welcome back', exact: true }).waitFor();
+      await capture(page, 'sign-in-desktop-dark');
+      await page.getByLabel('Username').fill('visual-admin-zero');
+      await page.getByLabel('Password').fill('incorrect-fictional-password');
+      await page.getByRole('button', { name: 'Sign in' }).click();
+      await page.getByRole('alert').filter({ hasText: /Invalid username or password/ }).waitFor();
+      await capture(page, 'validation-error-desktop-dark');
+      await page.getByLabel('Password').fill('fictional-visual-password-zero');
+      await page.getByRole('button', { name: 'Sign in' }).click();
+      await page.getByRole('heading', { name: 'Home', exact: true }).waitFor();
+
+      await captureResponsiveMatrix(page, zero.base, shared);
+      await context.close();
+      console.log('PASS zero-plugin visual states and responsive matrix');
     } finally { await stop(zero); }
 
     const fictional = await start('fictional-plugin');
     try {
-      const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, colorScheme: 'dark' });
+      const context = await browser.newContext({ viewport: viewports.desktop, colorScheme: 'dark', reducedMotion: 'reduce' });
+      const page = await context.newPage();
       await page.goto(fictional.base);
       await setup(page, 'fictional');
-      await page.getByRole('link', { name: 'Import' }).click();
+      await route(page, `${fictional.base}/#import`, 'Import');
+      await capture(page, 'import-provider-selection-desktop-dark');
       await page.getByLabel('Provider').selectOption('example.fictional-facility.json');
       await page.getByLabel('Source content').fill(fs.readFileSync(path.join(root, 'examples', 'fictional-plugin', 'example-plan.json'), 'utf8'));
       await page.getByLabel('Stable source reference').fill('FICTIONAL-VISUAL-PLAN-001');
       await page.getByRole('button', { name: 'Validate and preview' }).click();
-      await page.getByRole('heading', { name: 'Normalized preview' }).waitFor();
-      await screenshot(page, 'fictional-import-preview-desktop-dark');
-      const previewBox = await page.locator('.preview-panel').boundingBox();
-      const formBox = await page.locator('form').boundingBox();
-      assert.ok(previewBox && formBox && previewBox.x > formBox.x);
-      await page.close();
-      console.log('PASS fictional-plugin visual states');
+      await page.getByRole('heading', { name: 'Normalized preview', exact: true }).waitFor();
+      await capture(page, 'import-preview-reconciliation-desktop-dark');
+      await page.getByRole('button', { name: 'Approve import' }).click();
+      await page.getByRole('heading', { name: 'Import applied', exact: true }).waitFor();
+      await capture(page, 'import-result-desktop-dark');
+      await context.close();
+      console.log('PASS fictional-plugin import visual states');
     } finally { await stop(fictional); }
+    if (!updateBaselines) assert.deepEqual(Object.keys(observed.captures).sort(), Object.keys(expected.captures).sort(), 'Visual baseline set differs from the exercised capture matrix');
   } finally {
     await browser.close();
+    if (updateBaselines) {
+      fs.writeFileSync(baselineFile, `${JSON.stringify(observed, null, 2)}\n`);
+      console.log(`Updated visual baselines: ${baselineFile}`);
+    }
     console.log(`Visual artifacts: ${artifacts}`);
   }
 })().catch((error) => { console.error(error.stack || error.message); process.exitCode = 1; });
