@@ -2,6 +2,7 @@
 
 const express = require('express');
 const imports = require('../imports/service');
+const exportService = require('../plugins/export-service');
 const auth = require('../lib/auth');
 
 module.exports = function createImportRouter(registry) {
@@ -9,6 +10,7 @@ module.exports = function createImportRouter(registry) {
   router.use(auth.requireSession);
 
   router.get('/import-providers', (_req, res) => res.json(registry.providers));
+  router.get('/plugin-exporters', (_req, res) => res.json(registry.exporters));
   router.post('/import-providers/:providerId/drafts', auth.requireWrite, async (req, res, next) => {
     try { res.status(201).json(await imports.stage(registry, req.params.providerId, req.user.id, req.body)); } catch (error) { next(error); }
   });
@@ -23,6 +25,12 @@ module.exports = function createImportRouter(registry) {
   });
   router.get('/import-runs/:runId', async (req, res, next) => {
     try { res.json(await imports.getRun(req.params.runId)); } catch (error) { next(error); }
+  });
+  router.get('/work-packages/:publicId/plugin-exports/:exporterId', async (req, res, next) => {
+    try {
+      const output = await exportService.generate(registry, req.params.exporterId, req.params.publicId);
+      res.type(output.mediaType).attachment(output.fileName).send(output.content);
+    } catch (error) { next(error); }
   });
   return router;
 };

@@ -29,5 +29,15 @@ module.exports = {
       profileId: 'example.facility-json-v1',
       transform: require('./provider.cjs')
     }
+  ],
+  exporters: [
+    {
+      id: 'example.fictional-facility.summary',
+      label: 'Fictional facility summary',
+      mediaType: 'application/json',
+      fileExtension: '.facility.json',
+      maxBytes: 65536,
+      export: require('./exporter.cjs')
+    }
   ]
 };

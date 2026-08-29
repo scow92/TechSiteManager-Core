@@ -46,6 +46,12 @@ function ensurePlainMap(value, pathName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('profile_invalid_map', pathName);
 }
 
+function deepFreeze(value) {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  for (const entry of Object.values(value)) deepFreeze(entry);
+  return Object.freeze(value);
+}
+
 function parseProfile(source, registeredTransforms) {
   if (Buffer.byteLength(source) > MAX_BYTES) fail('profile_too_large');
   if (/(^|[\s,[{])(?:&|\*)[A-Za-z0-9_-]+|(^|\s)<<\s*:/m.test(source)) fail('profile_yaml_alias_forbidden');
@@ -68,7 +74,7 @@ function parseProfile(source, registeredTransforms) {
   for (const [index, transformId] of (profile.transforms || []).entries()) {
     if (!DURABLE_ID.test(transformId) || !registeredTransforms.has(transformId)) fail('profile_unknown_transform', `profile.transforms[${index}]`);
   }
-  return Object.freeze(profile);
+  return deepFreeze(profile);
 }
 
 function loadProfile(packageRoot, relativeFile, registeredTransforms) {
@@ -80,7 +86,7 @@ function loadProfile(packageRoot, relativeFile, registeredTransforms) {
   if (real !== root && !real.startsWith(root + path.sep)) fail('profile_symlink_escape');
   const source = fs.readFileSync(real, 'utf8');
   const profile = parseProfile(source, registeredTransforms);
-  return Object.freeze({ ...profile, hash: `sha256:${crypto.createHash('sha256').update(source).digest('hex')}` });
+  return deepFreeze({ ...profile, hash: `sha256:${crypto.createHash('sha256').update(source).digest('hex')}` });
 }
 
 module.exports = { parseProfile, loadProfile, MAX_BYTES };

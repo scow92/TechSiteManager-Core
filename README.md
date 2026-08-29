@@ -66,6 +66,10 @@ source connectors, named transformations, validated YAML profiles, and bounded
 source-specific exporters. Plugins receive no supported Express, Knex, cookie,
 raw-request, or core-write handle. They are trusted code, not sandboxed code.
 
+Configured packages require exact version pins. Provider descriptors are
+rendered by the generic browser shell, and bounded exporters are invoked only
+through core-owned authenticated routes.
+
 See [docs/PLUGINS.md](docs/PLUGINS.md),
 [docs/IMPORT_PROVIDER_API.md](docs/IMPORT_PROVIDER_API.md), and
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).

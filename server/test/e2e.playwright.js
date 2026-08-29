@@ -107,6 +107,12 @@ async function setup(page, base, suffix) {
       await page.getByText('Import applied').waitFor();
       await page.getByRole('link', { name: 'Work Packages' }).click();
       await page.getByText('PKG-DEMO-100').waitFor();
+      const exported = await page.evaluate(async () => {
+        const link = [...globalThis.document.querySelectorAll('a')].find((entry) => entry.textContent === 'Fictional facility summary');
+        const response = await fetch(link.href);
+        return { status: response.status, disposition: response.headers.get('content-disposition'), body: await response.json() };
+      });
+      assert.equal(exported.status, 200); assert.match(exported.disposition, /PKG-DEMO-100\.facility\.json/); assert.equal(exported.body.segmentCount, 1);
       await page.close();
       console.log('PASS fictional-plugin browser import flow');
     } finally { await stop(fictional); }

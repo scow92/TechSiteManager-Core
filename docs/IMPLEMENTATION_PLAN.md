@@ -43,9 +43,9 @@ or private repository details.
   imports with stable links and field ownership.
 - [x] Preserve manual divergence and represent source absence without deleting
   core records.
-- [ ] Tighten configuration/contribution schemas and approval validation.
-- [ ] Expose required exporters through a bounded core-owned route.
-- [ ] Complete descriptor-driven controls for every supported input type.
+- [x] Tighten configuration/contribution schemas and approval validation.
+- [x] Expose required exporters through a bounded core-owned route.
+- [x] Complete descriptor-driven controls for every supported input type.
 
 ## Offline and operations
 

@@ -81,13 +81,21 @@
   }
 
   async function homeView() {
-    const packages = await api('/work-packages');
-    const search = el('input', { type: 'search', placeholder: 'Search references, projects, sites, and descriptions', 'aria-label': 'Search work packages' });
+    const [packages, exporters] = await Promise.all([api('/work-packages'), api('/plugin-exporters')]);
+    const search = el('input', { type: 'search', placeholder: 'Search packages, sites, racks, devices, and endpoints', 'aria-label': 'Search records' });
     const list = el('div', { class: 'grid' });
-    const show = (rows) => list.replaceChildren(...rows.map((pack) => el('article', { class: 'card' }, el('span', { class: 'badge' }, pack.status), el('h2', {}, pack.packageReference), el('p', {}, pack.title), el('p', { class: 'muted' }, `${pack.siteCode} — ${pack.siteName}`), el('p', { class: 'muted' }, pack.externalReference || pack.projectReference || 'No external reference'))));
+    const show = (rows) => list.replaceChildren(...rows.map((record) => {
+      if (record.entityType && record.entityType !== 'work_package') return el('article', { class: 'card' }, el('span', { class: 'badge' }, record.entityType.replaceAll('_', ' ')), el('h2', {}, record.reference || record.title), el('p', { class: 'muted' }, [record.siteCode, record.siteName].filter(Boolean).join(' — ')));
+      const links = [
+        el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(record.publicId)}/export?format=json` }, 'JSON'),
+        el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(record.publicId)}/export?format=csv` }, 'CSV'),
+        ...exporters.map((exporter) => el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(record.publicId)}/plugin-exports/${encodeURIComponent(exporter.id)}` }, exporter.label))
+      ];
+      return el('article', { class: 'card' }, el('span', { class: 'badge' }, record.status), el('h2', {}, record.packageReference), el('p', {}, record.title), el('p', { class: 'muted' }, `${record.siteCode} — ${record.siteName}`), el('p', { class: 'muted' }, record.externalReference || record.projectReference || 'No external reference'), el('div', { class: 'actions' }, links));
+    }));
     show(packages);
     let timer;
-    search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(async () => show(search.value.trim() ? await api(`/search?q=${encodeURIComponent(search.value.trim())}`) : packages), 180); });
+    search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(async () => show(search.value.trim() ? await api(`/search?scope=all&q=${encodeURIComponent(search.value.trim())}`) : packages), 180); });
     app.replaceChildren(el('section', {}, el('div', { class: 'toolbar' }, el('label', {}, 'Search', search)), packages.length ? list : el('div', { class: 'panel' }, el('h1', {}, 'Work Packages'), el('p', { class: 'muted' }, 'No work packages have been created yet. Generic records remain available without import plugins.'))));
   }
 
@@ -103,9 +111,50 @@
   }
 
   function inputControl(descriptor) {
-    if (descriptor.input.type === 'file') return el('label', {}, 'Source file', el('input', { name: 'sourceFile', type: 'file', required: '' }));
+    if (descriptor.input.type === 'file') return el('label', {}, 'Source file', el('input', { name: 'sourceFile', type: 'file', required: '', accept: descriptor.input.mediaTypes.join(',') }));
     if (descriptor.input.type === 'pasted-text') return el('label', {}, 'Source content', el('textarea', { name: 'sourceText', required: '' }));
-    return el('label', {}, 'External source reference', el('input', { name: 'sourceText', required: '' }));
+    return el('label', {}, 'External source reference', el('input', { name: 'externalReference', required: '' }));
+  }
+
+  function descriptorField(descriptor) {
+    const attributes = { name: `providerField:${descriptor.id}`, 'data-provider-field': descriptor.id, 'data-provider-type': descriptor.type, required: descriptor.required ? '' : null };
+    let control;
+    if (descriptor.type === 'multiline') control = el('textarea', { ...attributes, maxlength: descriptor.maxLength || 20000 });
+    else if (descriptor.type === 'boolean') control = el('input', { ...attributes, type: 'checkbox', required: null });
+    else if (descriptor.type === 'enum') control = el('select', attributes, el('option', { value: '' }, 'Select…'), ...descriptor.options.map((option) => el('option', { value: option }, option)));
+    else control = el('input', { ...attributes, type: descriptor.type === 'integer' ? 'number' : 'text', maxlength: descriptor.maxLength || null });
+    return el('label', {}, descriptor.label, control);
+  }
+
+  function providerFields(form) {
+    const result = {};
+    for (const control of form.querySelectorAll('[data-provider-field]')) {
+      const type = control.getAttribute('data-provider-type');
+      if (type === 'boolean') result[control.getAttribute('data-provider-field')] = control.checked;
+      else if (control.value !== '') result[control.getAttribute('data-provider-field')] = type === 'integer' ? Number(control.value) : control.value;
+    }
+    return result;
+  }
+
+  function choice(options, selected, attributes) {
+    return el('select', attributes, ...options.map((option) => el('option', { value: option, selected: option === selected ? '' : null }, option.replaceAll('-', ' '))));
+  }
+
+  function reconciliationPreview(proposal) {
+    const entities = proposal.entityProposals.map((entity) => el('article', { class: 'card stack' },
+      el('h3', {}, `${entity.entityType.replaceAll('_', ' ')} — ${entity.action}`),
+      el('p', { class: 'muted' }, entity.sourceRecordKey),
+      ...entity.fields.filter((fieldEntry) => fieldEntry.changed || fieldEntry.conflict || fieldEntry.ownership === 'review-required').map((fieldEntry) => el('label', { class: fieldEntry.conflict ? 'conflict' : '' },
+        `${fieldEntry.fieldPath}: current ${JSON.stringify(fieldEntry.currentValue)} → source ${JSON.stringify(fieldEntry.sourceValue)}`,
+        choice(['accept-source', 'keep-current', 'make-user-owned', 'return-to-source', 'defer'], fieldEntry.recommended, { 'data-field-decision': `${entity.proposalId}.${fieldEntry.fieldPath}` })
+      ))
+    ));
+    const absences = proposal.absences.map((absence) => el('label', { class: 'card' }, `${absence.entityType.replaceAll('_', ' ')} ${absence.sourceRecordKey} is absent from the source`, choice(absence.choices, 'defer', { 'data-absence-decision': absence.proposalId })));
+    const warnings = proposal.warnings.map((warning) => el('label', { class: warning.severity === 'blocking' ? 'conflict' : '' },
+      el('input', { type: 'checkbox', 'data-warning-code': warning.code, disabled: warning.severity === 'blocking' ? null : '' }),
+      `${warning.severity}: ${warning.code}${warning.count === null ? '' : ` (${warning.count})`}`
+    ));
+    return el('div', { class: 'stack' }, ...warnings, ...entities, ...absences);
   }
 
   async function importView() {
@@ -119,21 +168,37 @@
     const select = el('select', { name: 'provider' }, ...providers.map((provider) => el('option', { value: provider.id }, provider.label)));
     const dynamic = el('div', { class: 'stack' });
     const preview = el('div');
-    const form = el('form', { class: 'panel stack' }, el('h1', {}, 'Import'), el('label', {}, 'Provider', select), dynamic, field('Stable source reference', 'externalReference', 'text', true), el('button', { type: 'submit' }, 'Validate and preview'));
-    function renderInput() { const provider = providers.find((entry) => entry.id === select.value); dynamic.replaceChildren(inputControl(provider)); }
+    const form = el('form', { class: 'panel stack' }, el('h1', {}, 'Import'), el('label', {}, 'Provider', select), dynamic, el('button', { type: 'submit' }, 'Validate and preview'));
+    function renderInput() {
+      const provider = providers.find((entry) => entry.id === select.value);
+      dynamic.replaceChildren(inputControl(provider), ...provider.input.fields.map(descriptorField), ...(provider.input.type === 'external-reference' ? [] : [field('Stable source reference (optional)', 'externalReference')]));
+    }
     select.addEventListener('change', renderInput); renderInput();
     form.addEventListener('submit', async (event) => {
       event.preventDefault(); preview.replaceChildren(el('p', { class: 'loading' }, 'Validating…'));
       try {
         const provider = providers.find((entry) => entry.id === select.value);
-        const data = new FormData(form); let content; let mediaType; let contentEncoding = 'utf8';
-        if (provider.input.type === 'file') { const file = data.get('sourceFile'); const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte); content = btoa(binary); contentEncoding = 'base64'; mediaType = file.type || 'application/octet-stream'; }
-        else { content = data.get('sourceText'); mediaType = provider.input.type === 'pasted-text' ? 'text/plain' : 'text/plain'; }
-        const proposal = await api(`/import-providers/${encodeURIComponent(provider.id)}/drafts`, { method: 'POST', body: { content, contentEncoding, mediaType, externalReference: data.get('externalReference'), fields: {} } });
-        const summary = el('pre', {}, JSON.stringify({ warnings: proposal.warnings, entities: proposal.entityProposals.map((entry) => ({ type: entry.entityType, action: entry.action, reference: entry.sourceRecordKey, conflicts: entry.fields.filter((field) => field.conflict).length })), absences: proposal.absences }, null, 2));
+        const data = new FormData(form); const fields = providerFields(form); let body;
+        if (provider.input.type === 'external-reference') body = { externalReference: data.get('externalReference'), fields };
+        else if (provider.input.type === 'file') {
+          const file = data.get('sourceFile');
+          if (file.size > provider.input.maxBytes) throw new Error('Source file exceeds the provider limit');
+          const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte);
+          body = { content: btoa(binary), contentEncoding: 'base64', mediaType: file.type || 'application/octet-stream', externalReference: data.get('externalReference'), fields };
+        } else body = { content: data.get('sourceText'), contentEncoding: 'utf8', mediaType: 'text/plain', externalReference: data.get('externalReference'), fields };
+        const proposal = await api(`/import-providers/${encodeURIComponent(provider.id)}/drafts`, { method: 'POST', body });
+        const reconciliation = reconciliationPreview(proposal);
         const apply = el('button', { type: 'button' }, 'Approve import');
-        apply.addEventListener('click', async () => { try { const result = await api(`/import-drafts/${proposal.draftId}/apply`, { method: 'POST', body: { schemaVersion: 'techsitemanager.io/import-approval/v1', draftHash: proposal.draftHash, targetVersions: proposal.targetVersions, fieldDecisions: {}, absenceDecisions: {}, acknowledgeWarnings: proposal.warnings.filter((warning) => warning.severity === 'blocking').map((warning) => warning.code) } }); preview.replaceChildren(el('div', { class: 'panel' }, el('h2', {}, 'Import applied'), el('pre', {}, JSON.stringify(result, null, 2)))); } catch (error) { notify(error.message); } });
-        preview.replaceChildren(el('div', { class: 'panel stack' }, el('h2', {}, 'Normalized preview'), summary, apply));
+        apply.addEventListener('click', async () => {
+          try {
+            const fieldDecisions = Object.fromEntries([...reconciliation.querySelectorAll('[data-field-decision]')].map((control) => [control.getAttribute('data-field-decision'), control.value]));
+            const absenceDecisions = Object.fromEntries([...reconciliation.querySelectorAll('[data-absence-decision]')].map((control) => [control.getAttribute('data-absence-decision'), control.value]));
+            const acknowledgeWarnings = [...reconciliation.querySelectorAll('[data-warning-code]:checked')].map((control) => control.getAttribute('data-warning-code'));
+            const result = await api(`/import-drafts/${proposal.draftId}/apply`, { method: 'POST', body: { schemaVersion: 'techsitemanager.io/import-approval/v1', draftHash: proposal.draftHash, targetVersions: proposal.targetVersions, fieldDecisions, absenceDecisions, acknowledgeWarnings } });
+            preview.replaceChildren(el('div', { class: 'panel' }, el('h2', {}, 'Import applied'), el('pre', {}, JSON.stringify(result, null, 2))));
+          } catch (error) { notify(error.message); }
+        });
+        preview.replaceChildren(el('div', { class: 'panel stack' }, el('h2', {}, 'Normalized preview'), reconciliation, apply));
       } catch (error) { preview.replaceChildren(el('p', { class: 'error' }, error.message)); }
     });
     app.replaceChildren(el('section', { class: 'stack' }, form, preview));

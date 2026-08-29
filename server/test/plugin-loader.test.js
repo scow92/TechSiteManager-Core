@@ -19,7 +19,7 @@ function packageFixture(root, name, options = {}) {
   fs.writeFileSync(path.join(packageRoot, 'index.cjs'), `module.exports={manifest:${JSON.stringify(manifest)}${provider}};`);
   return packageRoot;
 }
-function config(root, entries) { const file = path.join(root, 'plugins.json'); writeJson(file, { plugins: entries }); return file; }
+function config(root, entries) { const file = path.join(root, 'plugins.json'); writeJson(file, { plugins: entries.map((entry) => ({ expectedVersion: '1.0.0', ...entry })) }); return file; }
 
 test('zero-plugin registry is ready and empty', () => {
   const registry = loadPlugins({ configFile: path.join(__dirname, '..', '..', 'config', 'zero-plugins.json'), searchRoot: path.join(__dirname, '..', '..') });
@@ -32,9 +32,17 @@ test('fictional plugin registers one validated provider and profile', () => {
   const root = path.join(__dirname, '..', '..');
   const registry = loadPlugins({ configFile: path.join(root, 'config', 'fictional-plugin.json'), searchRoot: root });
   assert.deepEqual(registry.providers.map((entry) => entry.id), ['example.fictional-facility.json']);
+  assert.deepEqual(registry.exporters.map((entry) => entry.id), ['example.fictional-facility.summary']);
   assert.equal(registry.profile('example.facility-json-v1').schemaVersion, 'techsitemanager.io/import-profile/v1');
   assert.match(registry.profile('example.facility-json-v1').hash, /^sha256:[a-f0-9]{64}$/);
   assert.ok(Object.isFrozen(registry.provider('example.fictional-facility.json').input));
+  assert.ok(Object.isFrozen(registry.profile('example.facility-json-v1').fieldOwnership));
+});
+
+test('plugin configuration requires an exact expected package version', () => {
+  const root = temporaryRoot(); packageFixture(root, 'fixture-unpinned');
+  assert.throws(() => loadPlugins({ configFile: config(root, [{ package: 'fixture-unpinned', required: true, expectedVersion: undefined }]), searchRoot: root }), { code: 'plugin_config_entry_invalid' });
+  assert.throws(() => loadPlugins({ configFile: config(root, [{ package: 'fixture-unpinned', required: true, expectedVersion: '^1.0.0' }]), searchRoot: root }), { code: 'plugin_config_entry_invalid' });
 });
 
 test('missing required plugin fails with a sanitized code', () => {
@@ -66,6 +74,16 @@ test('duplicate durable provider IDs reject registry publication', () => {
   const registry = loadPlugins({ configFile: config(root, [{ package: 'fixture-one', required: true }, { package: 'fixture-two', required: false }]), searchRoot: root });
   assert.equal(registry.plugin('fixture.two'), undefined);
   assert.equal(registry.degraded[0].code, 'duplicate_provider_id');
+});
+
+test('unknown contribution fields and duplicate IDs within one package are rejected', () => {
+  const root = temporaryRoot();
+  const packageRoot = packageFixture(root, 'fixture-strict');
+  fs.writeFileSync(path.join(packageRoot, 'index.cjs'), "module.exports={manifest:{apiVersion:1,id:'fixture.strict',version:'1.0.0',coreCompatibility:'>=1.0.0-rc.1 <2.0.0'},imports:[{id:'fixture.strict.provider',label:'Strict',input:{type:'pasted-text',maxBytes:10,fields:[],unexpected:true},transform:async()=>({})}]};");
+  assert.throws(() => loadPlugins({ configFile: config(root, [{ package: 'fixture-strict', required: true }]), searchRoot: root }), { code: 'plugin_input_unknown_field' });
+  fs.writeFileSync(path.join(packageRoot, 'index.cjs'), "const provider={id:'fixture.strict.provider',label:'Strict',input:{type:'pasted-text',maxBytes:10,fields:[]},transform:async()=>({})};module.exports={manifest:{apiVersion:1,id:'fixture.strict',version:'1.0.0',coreCompatibility:'>=1.0.0-rc.1 <2.0.0'},imports:[provider,provider]};");
+  delete require.cache[path.join(packageRoot, 'index.cjs')];
+  assert.throws(() => loadPlugins({ configFile: config(root, [{ package: 'fixture-strict', required: true }]), searchRoot: root }), { code: 'duplicate_provider_id' });
 });
 
 test('package names are exact and reject paths, URLs, and package-root escape', () => {
