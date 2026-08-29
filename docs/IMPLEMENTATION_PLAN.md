@@ -75,3 +75,14 @@ or private repository details.
 - [ ] Record formal technical, security, disclosure, organizational, and
   publication approvals if they are later completed; public visibility alone
   does not establish them.
+
+## Generic visual parity
+
+- [x] Restore the project-owned visual tokens and shared responsive shell in
+  the native-module browser architecture.
+- [x] Apply generic layouts to work packages, sites, infrastructure records,
+  imports, settings, loading, empty, error, and synchronization states.
+- [x] Preserve generic terminology and descriptor-driven zero-plugin/plugin
+  behavior without plugin browser code.
+- [x] Add fictional Playwright visual-state coverage for desktop, tablet,
+  mobile, dark/light, offline, and reconciliation preview.

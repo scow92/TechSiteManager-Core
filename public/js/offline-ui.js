@@ -26,7 +26,7 @@ export async function offlineStatus(render) {
     await replayQueue();
     await render();
   } }, `Retry rejected ${operation.method} ${operation.path}`));
-  return el('aside', { class: 'panel stack', 'aria-label': 'Offline synchronization status' },
+  return el('aside', { class: 'panel stack sync-panel', 'aria-label': 'Offline synchronization status' },
     el('h2', {}, 'Offline synchronization'),
     el('p', {}, `${queued.length} queued, ${rejected.length} rejected`),
     ...retryButtons);

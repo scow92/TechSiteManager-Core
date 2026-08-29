@@ -1,10 +1,24 @@
-export interface User { readonly id: number; readonly role: 'admin' | 'manager' | 'engineer' | 'viewer'; }
+export interface User { readonly publicId: string; readonly username: string; readonly displayName: string; readonly email: string | null; readonly role: 'admin' | 'manager' | 'engineer' | 'viewer'; readonly active: boolean; readonly version: number; }
 export interface AuthStatus { readonly user: User | null; readonly setupNeeded: boolean; }
 export interface Site { readonly publicId: string; readonly code: string; readonly name: string; readonly description: string; }
 export interface ExporterDescriptor { readonly id: string; readonly label: string; }
 export interface WorkPackageSummary { readonly publicId: string; readonly packageReference: string; readonly title: string; readonly status: string; readonly siteCode: string; readonly siteName: string; readonly externalReference: string | null; readonly projectReference: string | null; }
 export interface SearchRecord extends Partial<WorkPackageSummary> { readonly entityType?: string; readonly reference?: string; }
-export interface SiteRecord { readonly name?: string; readonly label?: string; readonly hostname?: string; readonly endpointA?: string; readonly endpointB?: string; }
+export interface SiteRecord {
+  readonly publicId: string;
+  readonly name?: string;
+  readonly description?: string;
+  readonly label?: string;
+  readonly hostname?: string;
+  readonly endpointA?: string;
+  readonly endpointB?: string;
+  readonly roomPublicId?: string | null;
+  readonly rackPublicId?: string | null;
+  readonly suiteLine?: string;
+  readonly sizeUnits?: number;
+  readonly rackUnit?: number | null;
+  readonly side?: string;
+}
 export interface WorkItem { readonly itemReference: string; readonly title: string; readonly status: string; }
 export interface Segment { readonly fromEndpoint: string; readonly toEndpoint: string; }
 export interface Circuit { readonly circuitReference: string; readonly media: string; readonly segments: readonly Segment[]; }

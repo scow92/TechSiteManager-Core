@@ -18,10 +18,13 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm run lint
       - run: npm run syntax
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:e2e
+      - run: npm run test:visual
       - run: npm run scan:public
       - run: npm audit --audit-level=high
       - run: PLUGIN_CONFIG_FILE="$PWD/config/${{ matrix.plugin-config }}.json" DATA_DIR="$RUNNER_TEMP/data-${{ matrix.plugin-config }}" node server/scripts/migrate.js

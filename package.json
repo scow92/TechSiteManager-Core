@@ -40,8 +40,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.contracts.json && tsc --noEmit -p tsconfig.browser.json",
     "test": "node --test server/test/*.test.js",
     "test:e2e": "node server/test/e2e.playwright.js",
+    "test:visual": "node server/test/visual-parity.playwright.js",
     "test:recovery": "node --test server/test/recovery.test.js",
-    "test:all": "npm run lint && npm run syntax && npm run typecheck && npm test && npm run test:e2e",
+    "test:all": "npm run lint && npm run syntax && npm run typecheck && npm test && npm run test:e2e && npm run test:visual",
     "backup": "node server/scripts/backup.js",
     "restore": "node server/scripts/restore.js",
     "sbom": "npm sbom --sbom-format cyclonedx > sbom.cdx.json",
@@ -49,7 +50,7 @@
     "scan:history": "node server/scripts/history-disclosure-scan.js",
     "review:licenses": "node server/scripts/dependency-license-review.js",
     "review:package": "node server/scripts/package-content-review.js",
-    "verify:release": "npm run lint && npm run syntax && npm run typecheck && npm test && npm run test:e2e && npm run scan:public && npm run scan:history && npm run review:licenses && npm run review:package"
+    "verify:release": "npm run lint && npm run syntax && npm run typecheck && npm test && npm run test:e2e && npm run test:visual && npm run scan:public && npm run scan:history && npm run review:licenses && npm run review:package"
   },
   "dependencies": {
     "ajv": "^8.17.1",
