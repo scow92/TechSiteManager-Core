@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tsm-core-routes-'));
 const ADMIN_TEST_PASSWORD = ['fictional', 'admin', 'password'].join('-');
 const VIEWER_TEST_PASSWORD = ['fictional', 'viewer', 'password'].join('-');
+const WRITER_TEST_PASSWORD = ['fictional', 'writer', 'password'].join('-');
 process.env.DATA_DIR = testDataDir;
 process.env.DB_FILE = path.join(testDataDir, 'test.db');
 process.env.NODE_ENV = 'test';
@@ -22,6 +23,9 @@ const app = require('../app')(registry);
 let server;
 let base;
 let adminCookie;
+let managerCookie;
+let engineerCookie;
+let viewerUser;
 let site;
 let workPackage;
 let room;
@@ -61,7 +65,12 @@ test('setup, authentication, role authorization, and session revocation work', a
   const duplicate = await request('/api/auth/setup', { method: 'POST', body: { username: 'other', password: ADMIN_TEST_PASSWORD, displayName: 'Other Admin' } }, null);
   assert.equal(duplicate.response.status, 409);
   const viewer = await request('/api/auth/users', { method: 'POST', body: { username: 'viewer', password: VIEWER_TEST_PASSWORD, displayName: 'Demo Viewer', role: 'viewer', active: true } });
-  assert.equal(viewer.response.status, 201);
+  assert.equal(viewer.response.status, 201); viewerUser = viewer.data;
+  for (const role of ['manager', 'engineer']) {
+    assert.equal((await request('/api/auth/users', { method: 'POST', body: { username: role, password: WRITER_TEST_PASSWORD, displayName: `Demo ${role}`, role, active: true } })).response.status, 201);
+    const writerLogin = await request('/api/auth/login', { method: 'POST', body: { username: role, password: WRITER_TEST_PASSWORD } }, null);
+    if (role === 'manager') managerCookie = writerLogin.response.headers.get('set-cookie').split(';')[0]; else engineerCookie = writerLogin.response.headers.get('set-cookie').split(';')[0];
+  }
   const login = await request('/api/auth/login', { method: 'POST', body: { username: 'viewer', password: VIEWER_TEST_PASSWORD } }, null);
   const viewerCookie = login.response.headers.get('set-cookie').split(';')[0];
   const forbidden = await request('/api/sites', { method: 'POST', body: { code: 'READ-ONLY', name: 'Rejected Site' } }, viewerCookie);
@@ -70,6 +79,39 @@ test('setup, authentication, role authorization, and session revocation work', a
   assert.equal(logout.response.status, 204);
   const afterLogout = await request('/api/sites', {}, viewerCookie);
   assert.equal(afterLogout.response.status, 401);
+});
+
+test('writer roles can mutate core records but administrator boundaries remain enforced', async () => {
+  for (const [role, cookie] of [['manager', managerCookie], ['engineer', engineerCookie]]) {
+    const created = await request('/api/sites', { method: 'POST', body: { code: `ROLE-${role.toUpperCase()}`, name: `Fictional ${role} site` } }, cookie);
+    assert.equal(created.response.status, 201, role);
+    assert.equal((await request('/api/catalogue/consumables', { method: 'POST', body: { catalogueReference: `ROLE-${role}`, description: 'Rejected privileged write', unit: 'each' } }, cookie)).response.status, 403, role);
+    assert.equal((await request('/api/auth/users', {}, cookie)).response.status, 403, role);
+    assert.equal((await request('/api/audit', {}, cookie)).response.status, 403, role);
+  }
+});
+
+test('user administration is concurrent, audited, and preserves an active administrator', async () => {
+  const missingBase = await request(`/api/auth/users/${viewerUser.publicId}`, { method: 'PUT', body: { displayName: viewerUser.displayName, email: viewerUser.email, role: viewerUser.role, active: true } });
+  assert.equal(missingBase.response.status, 428);
+  const updated = await request(`/api/auth/users/${viewerUser.publicId}`, { method: 'PUT', body: { displayName: 'Updated Demo Viewer', email: viewerUser.email, role: viewerUser.role, active: true, _baseVersion: viewerUser.version } });
+  assert.equal(updated.response.status, 200); assert.equal(updated.data.version, viewerUser.version + 1);
+  assert.equal((await request(`/api/auth/users/${viewerUser.publicId}`, { method: 'PUT', body: { displayName: viewerUser.displayName, email: viewerUser.email, role: viewerUser.role, active: true, _baseVersion: viewerUser.version } })).response.status, 409);
+  const administrator = (await request('/api/auth/users')).data.find((entry) => entry.username === 'admin');
+  const protectedAdmin = await request(`/api/auth/users/${administrator.publicId}`, { method: 'PUT', body: { displayName: administrator.displayName, email: administrator.email, role: 'viewer', active: true, _baseVersion: administrator.version } });
+  assert.equal(protectedAdmin.response.status, 409); assert.equal(protectedAdmin.data.code, 'last_admin_required');
+  assert.equal((await request(`/api/auth/users/${crypto.randomUUID()}`, { method: 'PUT', body: { displayName: 'Missing', email: null, role: 'viewer', active: true, _baseVersion: 0 } })).response.status, 404);
+});
+
+test('origin checks, security headers, and public errors do not leak internals', async () => {
+  const health = await request('/api/health', {}, null);
+  assert.match(health.response.headers.get('content-security-policy'), /default-src 'self'/); assert.equal(health.response.headers.get('x-content-type-options'), 'nosniff'); assert.equal(health.response.headers.get('cache-control'), 'no-store');
+  const crossed = await request('/api/sites', { method: 'POST', headers: { Origin: 'https://different.example.invalid' }, body: { code: 'CROSS-ORIGIN', name: 'Rejected' } });
+  assert.equal(crossed.response.status, 403); assert.equal(crossed.data.code, 'cross_origin_rejected');
+  const duplicate = await request('/api/sites', { method: 'POST', body: { code: 'ROLE-MANAGER', name: 'Duplicate' } });
+  assert.equal(duplicate.response.status, 409); assert.equal(duplicate.data.code, 'constraint_conflict'); assert.doesNotMatch(JSON.stringify(duplicate.data), /SQLITE|stack|insert into/i);
+  const malformedResponse = await fetch(`${base}/api/sites`, { method: 'POST', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: '{' });
+  const malformed = await malformedResponse.json(); assert.equal(malformedResponse.status, 400); assert.equal(malformed.code, 'invalid_json'); assert.doesNotMatch(JSON.stringify(malformed), /SyntaxError|stack/i);
 });
 
 test('login failures are throttled without disclosing whether an account exists', async () => {
@@ -158,6 +200,29 @@ test('optimistic concurrency requires a base version and rejects stale writes', 
   assert.equal(stale.response.status, 409);
 });
 
+test('generic work-item, circuit, segment, and requirement mutations preserve stable IDs and concurrency', async () => {
+  const item = workPackage.workItems[0]; const circuit = workPackage.circuits[0]; const segment = circuit.segments[0]; const requirement = workPackage.consumableRequirements[0];
+  let result = await request(`/api/work-packages/${workPackage.publicId}/work-items/${item.publicId}`, { method: 'PUT', body: { itemReference: item.itemReference, title: 'Updated child work item', description: item.description, status: 'active', sequence: item.sequence, _baseVersion: item.version } });
+  assert.equal(result.response.status, 200); assert.equal(result.data.workItems[0].publicId, item.publicId); assert.equal(result.data.workItems[0].version, 1);
+  assert.equal((await request(`/api/work-packages/${workPackage.publicId}/work-items/${item.publicId}`, { method: 'PUT', body: { itemReference: item.itemReference, title: item.title, description: item.description, status: item.status, sequence: item.sequence, _baseVersion: item.version } })).response.status, 409);
+
+  result = await request(`/api/work-packages/${workPackage.publicId}/circuits/${circuit.publicId}`, { method: 'PUT', body: { circuitReference: circuit.circuitReference, description: 'Updated circuit', media: circuit.media, status: 'active', _baseVersion: circuit.version } });
+  assert.equal(result.response.status, 200); assert.equal(result.data.circuits[0].publicId, circuit.publicId);
+  result = await request(`/api/work-packages/${workPackage.publicId}/circuits/${circuit.publicId}/segments/${segment.publicId}`, { method: 'PUT', body: { segmentReference: segment.segmentReference, sequence: segment.sequence, fromEndpoint: segment.fromEndpoint, toEndpoint: segment.toEndpoint, lengthMetres: 8.5, notes: 'Reviewed', _baseVersion: segment.version } });
+  assert.equal(result.response.status, 200); assert.equal(result.data.circuits[0].segments[0].publicId, segment.publicId); assert.equal(Number(result.data.circuits[0].segments[0].lengthMetres), 8.5);
+  result = await request(`/api/work-packages/${workPackage.publicId}/consumable-requirements/${requirement.publicId}`, { method: 'PUT', body: { cataloguePublicId: catalogue.publicId, description: requirement.description, quantityRequired: 6, unit: requirement.unit, _baseVersion: requirement.version } });
+  assert.equal(result.response.status, 200); assert.equal(result.data.consumableRequirements[0].publicId, requirement.publicId); assert.equal(result.data.consumableRequirements[0].cataloguePublicId, catalogue.publicId);
+
+  result = await request(`/api/work-packages/${workPackage.publicId}/work-items`, { method: 'POST', body: { itemReference: 'ITEM-ADDED-2', title: 'Added generic item', status: 'planned', sequence: 2 } });
+  assert.equal(result.response.status, 201); assert.ok(result.data.workItems.some((entry) => entry.itemReference === 'ITEM-ADDED-2'));
+  result = await request(`/api/work-packages/${workPackage.publicId}/circuits`, { method: 'POST', body: { circuitReference: 'CIRCUIT-ADDED-2', description: 'Added connection', media: 'fibre', status: 'planned' } });
+  const addedCircuit = result.data.circuits.find((entry) => entry.circuitReference === 'CIRCUIT-ADDED-2'); assert.equal(result.response.status, 201); assert.ok(addedCircuit);
+  result = await request(`/api/work-packages/${workPackage.publicId}/circuits/${addedCircuit.publicId}/segments`, { method: 'POST', body: { segmentReference: 'SEGMENT-ADDED-2', sequence: 0, fromEndpoint: 'fictional-a:1', toEndpoint: 'fictional-b:1', lengthMetres: 10 } });
+  assert.equal(result.response.status, 201); assert.ok(result.data.circuits.find((entry) => entry.publicId === addedCircuit.publicId).segments.some((entry) => entry.segmentReference === 'SEGMENT-ADDED-2'));
+  result = await request(`/api/work-packages/${workPackage.publicId}/consumable-requirements`, { method: 'POST', body: { cataloguePublicId: catalogue.publicId, description: 'Added generic requirement', quantityRequired: 2, unit: 'each' } });
+  assert.equal(result.response.status, 201); assert.ok(result.data.consumableRequirements.some((entry) => entry.description === 'Added generic requirement'));
+});
+
 test('generic JSON and CSV exports are available without plugins and neutralize formula cells', async () => {
   const json = await request(`/api/work-packages/${workPackage.publicId}/export?format=json`);
   assert.equal(json.response.status, 200); assert.match(json.response.headers.get('content-disposition'), /attachment/);
@@ -179,7 +244,7 @@ test('photo metadata listing does not return image bytes', async () => {
 
 test('generic mutations create sanitized audit events', async () => {
   const events = await request('/api/audit');
-  for (const action of ['racks.create', 'racks.update', 'consumable.create', 'consumable.update', 'work_package.create', 'work_package.update', 'photo.create']) {
+  for (const action of ['user.create', 'user.update', 'racks.create', 'racks.update', 'consumable.create', 'consumable.update', 'work_package.create', 'work_package.update', 'work_item.create', 'work_item.update', 'circuit.create', 'circuit.update', 'segment.create', 'segment.update', 'consumable_requirement.create', 'consumable_requirement.update', 'photo.create']) {
     assert.ok(events.data.some((entry) => entry.action === action), action);
   }
 });

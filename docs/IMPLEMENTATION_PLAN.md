@@ -23,12 +23,12 @@ or private repository details.
 - [x] Give linkable records stable opaque public identifiers.
 - [x] Provide zero-plugin reads, package search, generic JSON/CSV exports,
   optimistic concurrency, authentication, role checks, and backup/restore.
-- [ ] Complete mutation validation, audit, entity existence checks, and
+- [x] Complete mutation validation, audit, entity existence checks, and
   optimistic-concurrency coverage across the generic routes.
 - [x] Extend zero-plugin search across generic infrastructure and package child
   records.
 - [x] Add login throttling without account-existence disclosure.
-- [ ] Complete browser navigation and remaining authorization regression
+- [x] Complete browser navigation and remaining authorization regression
   coverage.
 
 ## Plugin and import contract

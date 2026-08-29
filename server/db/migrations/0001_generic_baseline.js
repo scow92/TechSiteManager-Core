@@ -164,6 +164,7 @@ exports.up = async function up(knex) {
     table.text('description').notNullable();
     table.decimal('quantity_required', 12, 3).notNullable();
     table.text('unit').notNullable().defaultTo('each');
+    table.integer('version').notNullable().defaultTo(0);
   });
 
   await knex.schema.createTable('distance_samples', (table) => {

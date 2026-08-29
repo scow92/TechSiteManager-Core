@@ -66,6 +66,17 @@
     return el('label', {}, label, el('input', { name, type, required: required ? '' : null }));
   }
 
+  function selectField(label, name, options, selected) {
+    return el('label', {}, label, el('select', { name }, ...options.map((option) => {
+      const value = typeof option === 'string' ? option : option.value; const text = typeof option === 'string' ? option : option.label;
+      return el('option', { value, selected: value === selected ? '' : null }, text);
+    })));
+  }
+
+  function multilineField(label, name, value = '') {
+    return el('label', {}, label, el('textarea', { name }, value));
+  }
+
   async function offlineStatus() {
     const [queued, rejected] = await Promise.all([OfflineStore.all('operation-queue'), OfflineStore.all('dead-letters')]);
     if (!queued.length && !rejected.length) return null;
@@ -96,7 +107,7 @@
   }
 
   async function homeView() {
-    const [packages, exporters, synchronization] = await Promise.all([api('/work-packages'), api('/plugin-exporters'), offlineStatus()]);
+    const [packages, exporters, synchronization, sites] = await Promise.all([api('/work-packages'), api('/plugin-exporters'), offlineStatus(), api('/sites')]);
     const search = el('input', { type: 'search', placeholder: 'Search packages, sites, racks, devices, and endpoints', 'aria-label': 'Search records' });
     const list = el('div', { class: 'grid' });
     const show = (rows) => list.replaceChildren(...rows.map((record) => {
@@ -106,12 +117,29 @@
         el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(record.publicId)}/export?format=csv` }, 'CSV'),
         ...exporters.map((exporter) => el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(record.publicId)}/plugin-exports/${encodeURIComponent(exporter.id)}` }, exporter.label))
       ];
-      return el('article', { class: 'card' }, el('span', { class: 'badge' }, record.status), el('h2', {}, record.packageReference), el('p', {}, record.title), el('p', { class: 'muted' }, `${record.siteCode} — ${record.siteName}`), el('p', { class: 'muted' }, record.externalReference || record.projectReference || 'No external reference'), el('div', { class: 'actions' }, links));
+      return el('article', { class: 'card' }, el('span', { class: 'badge' }, record.status), el('h2', {}, el('a', { href: `#package/${record.publicId}` }, record.packageReference)), el('p', {}, record.title), el('p', { class: 'muted' }, `${record.siteCode} — ${record.siteName}`), el('p', { class: 'muted' }, record.externalReference || record.projectReference || 'No external reference'), el('div', { class: 'actions' }, links));
     }));
     show(packages);
     let timer;
     search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(async () => show(search.value.trim() ? await api(`/search?scope=all&q=${encodeURIComponent(search.value.trim())}`) : packages), 180); });
-    app.replaceChildren(el('section', { class: 'stack' }, ...(synchronization ? [synchronization] : []), el('div', { class: 'toolbar' }, el('label', {}, 'Search', search)), packages.length ? list : el('div', { class: 'panel' }, el('h1', {}, 'Work Packages'), el('p', { class: 'muted' }, 'No work packages have been created yet. Generic records remain available without import plugins.'))));
+    let create = null;
+    if (user.role !== 'viewer') {
+      create = el('form', { class: 'panel stack' }, el('h2', {}, 'Add work package'),
+        selectField('Site', 'sitePublicId', sites.map((site) => ({ value: site.publicId, label: `${site.code} — ${site.name}` }))),
+        field('Package reference', 'packageReference', 'text', true), field('Title', 'title', 'text', true),
+        field('Project reference (optional)', 'projectReference'), el('button', { type: 'submit', disabled: sites.length ? null : '' }, 'Add work package'),
+        ...(!sites.length ? [el('p', { class: 'muted' }, 'Create a site before adding a work package.')] : [])
+      );
+      create.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        try {
+          const values = Object.fromEntries(new FormData(create));
+          const created = await api('/work-packages', { method: 'POST', body: { ...values, status: 'planned', assignees: [], workItems: [], circuits: [], consumableRequirements: [] } });
+          location.hash = `#package/${created.publicId}`;
+        } catch (error) { notify(error.message); }
+      });
+    }
+    app.replaceChildren(el('section', { class: 'stack' }, ...(synchronization ? [synchronization] : []), el('div', { class: 'toolbar' }, el('label', {}, 'Search', search)), packages.length ? list : el('div', { class: 'panel' }, el('h1', {}, 'Work Packages'), el('p', { class: 'muted' }, 'No work packages have been created yet. Generic records remain available without import plugins.')), ...(create ? [create] : [])));
   }
 
   async function sitesView() {
@@ -119,10 +147,43 @@
     const form = el('form', { class: 'panel stack' }, el('h2', {}, 'Add site'), field('Code', 'code', 'text', true), field('Name', 'name', 'text', true), field('Description', 'description'), el('button', { type: 'submit' }, 'Add site'));
     form.addEventListener('submit', async (event) => { event.preventDefault(); try { const temporaryId = `urn:offline:${crypto.randomUUID()}`; const result = await api('/sites', { method: 'POST', body: Object.fromEntries(new FormData(form)), queueable: true, queueMetadata: { temporaryId } }); notify(result.queued ? 'Site queued for sync' : 'Site created'); await sitesView(); } catch (error) { notify(error.message); } });
     const cards = el('div', { class: 'grid' }, ...sites.map((site) => el('article', { class: 'card' },
-      el('h2', {}, site.code), el('p', {}, site.name), el('p', { class: 'muted' }, site.description)
+      el('h2', {}, el('a', { href: `#site/${site.publicId}` }, site.code)), el('p', {}, site.name), el('p', { class: 'muted' }, site.description)
     )));
     app.replaceChildren(el('section', { class: 'stack' }, el('h1', {}, 'Sites'), cards,
       user.role !== 'viewer' ? form : el('p', { class: 'muted' }, 'Read-only access')));
+  }
+
+  async function siteView(publicId) {
+    const sites = await api('/sites'); const site = sites.find((entry) => entry.publicId === publicId);
+    if (!site) throw new Error('Site not found');
+    const kinds = [['rooms', 'Rooms'], ['racks', 'Racks'], ['termination-points', 'Termination points'], ['devices', 'Devices'], ['distances', 'Distance samples']];
+    const records = await Promise.all(kinds.map(([kind]) => api(`/sites/${encodeURIComponent(publicId)}/${kind}`)));
+    const sections = kinds.map(([, label], index) => el('section', { class: 'panel' }, el('h2', {}, label), records[index].length
+      ? el('ul', {}, ...records[index].map((record) => el('li', {}, record.name || record.label || record.hostname || `${record.endpointA} → ${record.endpointB}`)))
+      : el('p', { class: 'muted' }, `No ${label.toLowerCase()} recorded.`)));
+    app.replaceChildren(el('section', { class: 'stack' }, el('a', { href: '#sites' }, '← Sites'), el('div', { class: 'panel' }, el('h1', {}, `${site.code} — ${site.name}`), el('p', {}, site.description)), ...sections));
+  }
+
+  function recordList(title, records, render) {
+    return el('section', { class: 'panel' }, el('h2', {}, title), records.length ? el('ul', {}, ...records.map((record) => el('li', {}, render(record)))) : el('p', { class: 'muted' }, `No ${title.toLowerCase()} recorded.`));
+  }
+
+  async function packageView(publicId) {
+    let pack = await api(`/work-packages/${encodeURIComponent(publicId)}`);
+    const details = el('form', { class: 'panel stack' }, el('h1', {}, pack.packageReference), field('Package reference', 'packageReference', 'text', true), field('Title', 'title', 'text', true), multilineField('Description', 'description', pack.description), selectField('Status', 'status', ['planned', 'active', 'blocked', 'complete', 'cancelled'], pack.status), field('External reference', 'externalReference'), field('Project reference', 'projectReference'), field('Lead assignee', 'leadAssignee'), field('Assignees (comma separated)', 'assignees'), ...(user.role !== 'viewer' ? [el('button', { type: 'submit' }, 'Save work package')] : []));
+    for (const [name, value] of Object.entries({ packageReference: pack.packageReference, title: pack.title, externalReference: pack.externalReference || '', projectReference: pack.projectReference || '', leadAssignee: pack.leadAssignee || '', assignees: pack.assignees.join(', ') })) details.elements[name].value = value;
+    details.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const values = Object.fromEntries(new FormData(details));
+        pack = await api(`/work-packages/${encodeURIComponent(pack.publicId)}`, { method: 'PUT', body: { ...values, assignees: values.assignees.split(',').map((value) => value.trim()).filter(Boolean), _baseVersion: pack.version } });
+        notify('Work package saved'); await packageView(pack.publicId);
+      } catch (error) { notify(error.message); }
+    });
+    const items = recordList('Work items', pack.workItems, (item) => `${item.itemReference} — ${item.title} (${item.status})`);
+    const circuits = recordList('Circuits and segments', pack.circuits, (circuit) => `${circuit.circuitReference} — ${circuit.media}; ${circuit.segments.map((segment) => `${segment.fromEndpoint} → ${segment.toEndpoint}`).join(', ') || 'no segments'}`);
+    const requirements = recordList('Consumable requirements', pack.consumableRequirements, (requirement) => `${requirement.description}: ${requirement.quantityRequired} ${requirement.unit}`);
+    app.replaceChildren(el('section', { class: 'stack' }, el('a', { href: '#home' }, '← Work packages'), details, items, circuits, requirements));
   }
 
   function inputControl(descriptor) {
@@ -224,7 +285,10 @@
     if (!user) { nav.hidden = true; authView(status.setupNeeded); return; }
     nav.hidden = false;
     const route = (location.hash || '#home').slice(1);
-    if (route === 'sites') await sitesView(); else if (route === 'import') await importView(); else await homeView();
+    if (route === 'sites') await sitesView();
+    else if (route.startsWith('site/')) await siteView(route.slice(5));
+    else if (route.startsWith('package/')) await packageView(route.slice(8));
+    else if (route === 'import') await importView(); else await homeView();
   }
 
   document.getElementById('logout').addEventListener('click', async () => {

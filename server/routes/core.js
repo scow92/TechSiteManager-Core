@@ -14,6 +14,11 @@ const PACKAGE_STATUSES = ['planned', 'active', 'blocked', 'complete', 'cancelled
 
 function id() { return crypto.randomUUID(); }
 
+function baseVersion(body) {
+  if (!Number.isInteger(body && body._baseVersion)) throw httpError(428, 'base_version_required', '_baseVersion is required');
+  return integer(body._baseVersion, '_baseVersion', { required: true, min: 0 });
+}
+
 async function siteByPublicId(publicId, trx = db) {
   const site = await trx('sites').where({ public_id: publicId }).first();
   if (!site) throw httpError(404, 'site_not_found', 'Site not found');
@@ -71,10 +76,10 @@ router.post('/sites', auth.requireWrite, async (req, res, next) => {
 router.put('/sites/:publicId', auth.requireWrite, async (req, res, next) => {
   try {
     knownKeys(req.body, ['code', 'name', 'description', '_baseVersion']);
-    const baseVersion = integer(req.body._baseVersion, '_baseVersion', { required: true, min: 0 });
-    const changes = { code: string(req.body.code, 'code', { required: true, max: 64 }), name: string(req.body.name, 'name', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', version: baseVersion + 1, updated_at: db.fn.now() };
+    const requestedVersion = baseVersion(req.body);
+    const changes = { code: string(req.body.code, 'code', { required: true, max: 64 }), name: string(req.body.name, 'name', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', version: requestedVersion + 1, updated_at: db.fn.now() };
     const updated = await db.transaction(async (trx) => {
-      const count = await trx('sites').where({ public_id: req.params.publicId, version: baseVersion }).update(changes);
+      const count = await trx('sites').where({ public_id: req.params.publicId, version: requestedVersion }).update(changes);
       if (!count) {
         const current = await trx('sites').where({ public_id: req.params.publicId }).first();
         if (!current) throw httpError(404, 'site_not_found', 'Site not found');
@@ -169,11 +174,11 @@ router.put('/sites/:sitePublicId/:kind/:publicId', auth.requireWrite, async (req
     const spec = infrastructureSpec(req.params.kind);
     if (!spec || spec.appendOnly) throw httpError(404, 'route_not_found', 'Route not found');
     knownKeys(req.body, [...spec.fields, '_baseVersion']);
-    const baseVersion = integer(req.body._baseVersion, '_baseVersion', { required: true, min: 0 });
+    const requestedVersion = baseVersion(req.body);
     const updated = await db.transaction(async (trx) => {
       const site = await siteByPublicId(req.params.sitePublicId, trx);
-      const changes = { ...(await infrastructureValues(req.params.kind, req.body, site, trx)), version: baseVersion + 1 };
-      const count = await trx(spec.table).where({ public_id: req.params.publicId, site_id: site.id, version: baseVersion }).update(changes);
+      const changes = { ...(await infrastructureValues(req.params.kind, req.body, site, trx)), version: requestedVersion + 1 };
+      const count = await trx(spec.table).where({ public_id: req.params.publicId, site_id: site.id, version: requestedVersion }).update(changes);
       if (!count) {
         const current = await trx(spec.table).where({ public_id: req.params.publicId, site_id: site.id }).first();
         if (!current) throw httpError(404, 'infrastructure_not_found', 'Record not found');
@@ -239,12 +244,11 @@ router.post('/work-packages', auth.requireWrite, async (req, res, next) => {
 
 router.put('/work-packages/:publicId', auth.requireWrite, async (req, res, next) => {
   try {
-    if (!Number.isInteger(req.body._baseVersion)) throw httpError(428, 'base_version_required', '_baseVersion is required');
-    const baseVersion = integer(req.body._baseVersion, '_baseVersion', { required: true, min: 0 });
+    const requestedVersion = baseVersion(req.body);
     knownKeys(req.body, ['packageReference', 'externalReference', 'projectReference', 'title', 'description', 'status', 'leadAssignee', 'assignees', '_baseVersion']);
-    const changes = { package_ref: string(req.body.packageReference, 'packageReference', { required: true, max: 255 }), external_reference: string(req.body.externalReference, 'externalReference', { max: 255 }), project_reference: string(req.body.projectReference, 'projectReference', { max: 255 }), title: string(req.body.title, 'title', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', status: enumeration(req.body.status, 'status', PACKAGE_STATUSES, true), lead_assignee: string(req.body.leadAssignee, 'leadAssignee', { max: 64 }), assignees_json: JSON.stringify(assignees(req.body.assignees)), version: baseVersion + 1, updated_at: db.fn.now() };
+    const changes = { package_ref: string(req.body.packageReference, 'packageReference', { required: true, max: 255 }), external_reference: string(req.body.externalReference, 'externalReference', { max: 255 }), project_reference: string(req.body.projectReference, 'projectReference', { max: 255 }), title: string(req.body.title, 'title', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', status: enumeration(req.body.status, 'status', PACKAGE_STATUSES, true), lead_assignee: string(req.body.leadAssignee, 'leadAssignee', { max: 64 }), assignees_json: JSON.stringify(assignees(req.body.assignees)), version: requestedVersion + 1, updated_at: db.fn.now() };
     await db.transaction(async (trx) => {
-      const updated = await trx('work_packages').where({ public_id: req.params.publicId, version: baseVersion }).update(changes);
+      const updated = await trx('work_packages').where({ public_id: req.params.publicId, version: requestedVersion }).update(changes);
       if (!updated) {
         const current = await trx('work_packages').where({ public_id: req.params.publicId }).first();
         if (!current) throw httpError(404, 'work_package_not_found', 'Work package not found');
@@ -253,6 +257,170 @@ router.put('/work-packages/:publicId', auth.requireWrite, async (req, res, next)
       await audit.record(trx, req.user.id, 'work_package.update', 'work_package', req.params.publicId);
     });
     res.json(await packageDetail(req.params.publicId));
+  } catch (error) { next(error); }
+});
+
+async function workPackageRow(trx, publicId) {
+  const row = await trx('work_packages').where({ public_id: uuid(publicId, 'workPackagePublicId') }).first();
+  if (!row) throw httpError(404, 'work_package_not_found', 'Work package not found');
+  return row;
+}
+
+function workItemValues(body) {
+  return {
+    item_reference: string(body.itemReference, 'itemReference', { required: true, max: 255 }),
+    title: string(body.title, 'title', { required: true, max: 255 }),
+    description: string(body.description, 'description', { max: 20_000 }) || '',
+    status: enumeration(body.status || 'planned', 'status', PACKAGE_STATUSES, true),
+    sequence: integer(body.sequence === undefined ? 0 : body.sequence, 'sequence', { required: true, min: 0, max: 100_000 })
+  };
+}
+
+function circuitValues(body) {
+  return {
+    circuit_reference: string(body.circuitReference, 'circuitReference', { required: true, max: 255 }),
+    description: string(body.description, 'description', { max: 20_000 }) || '',
+    media: string(body.media, 'media', { required: true, max: 64 }),
+    status: enumeration(body.status || 'planned', 'status', PACKAGE_STATUSES, true)
+  };
+}
+
+function segmentValues(body) {
+  return {
+    segment_reference: string(body.segmentReference, 'segmentReference', { required: true, max: 255 }),
+    sequence: integer(body.sequence === undefined ? 0 : body.sequence, 'sequence', { required: true, min: 0, max: 100_000 }),
+    from_endpoint: string(body.fromEndpoint, 'fromEndpoint', { required: true, max: 255 }),
+    to_endpoint: string(body.toEndpoint, 'toEndpoint', { required: true, max: 255 }),
+    length_metres: number(body.lengthMetres, 'lengthMetres', { min: 0, max: 1_000_000 }),
+    notes: string(body.notes, 'notes', { max: 20_000 }) || ''
+  };
+}
+
+async function requirementValues(trx, body) {
+  let catalogueId = null;
+  if (body.cataloguePublicId) {
+    const catalogue = await trx('consumable_catalogue').where({ public_id: uuid(body.cataloguePublicId, 'cataloguePublicId') }).first();
+    if (!catalogue) throw httpError(422, 'catalogue_record_not_found', 'Consumable catalogue record not found');
+    catalogueId = catalogue.id;
+  }
+  return {
+    catalogue_id: catalogueId,
+    description: string(body.description, 'description', { required: true, max: 255 }),
+    quantity_required: number(body.quantityRequired, 'quantityRequired', { required: true, min: Number.EPSILON, max: 1_000_000 }),
+    unit: string(body.unit, 'unit', { required: true, max: 64 })
+  };
+}
+
+async function updateChild(trx, table, where, requestedVersion, values, notFoundCode, notFoundMessage) {
+  const count = await trx(table).where({ ...where, version: requestedVersion }).update({ ...values, version: requestedVersion + 1 });
+  if (count) return;
+  if (!await trx(table).where(where).first()) throw httpError(404, notFoundCode, notFoundMessage);
+  throw httpError(409, 'version_conflict', 'The record changed since it was loaded');
+}
+
+router.post('/work-packages/:workPackagePublicId/work-items', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['itemReference', 'title', 'description', 'status', 'sequence']);
+    await db.transaction(async (trx) => {
+      const pack = await workPackageRow(trx, req.params.workPackagePublicId); const publicId = id();
+      await trx('work_items').insert({ public_id: publicId, work_package_id: pack.id, ...workItemValues(req.body) });
+      await audit.record(trx, req.user.id, 'work_item.create', 'work_item', publicId);
+    });
+    res.status(201).json(await packageDetail(req.params.workPackagePublicId));
+  } catch (error) { next(error); }
+});
+
+router.put('/work-packages/:workPackagePublicId/work-items/:publicId', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['itemReference', 'title', 'description', 'status', 'sequence', '_baseVersion']);
+    const requestedVersion = baseVersion(req.body);
+    await db.transaction(async (trx) => {
+      const pack = await workPackageRow(trx, req.params.workPackagePublicId);
+      await updateChild(trx, 'work_items', { public_id: uuid(req.params.publicId, 'publicId'), work_package_id: pack.id }, requestedVersion, workItemValues(req.body), 'work_item_not_found', 'Work item not found');
+      await audit.record(trx, req.user.id, 'work_item.update', 'work_item', req.params.publicId);
+    });
+    res.json(await packageDetail(req.params.workPackagePublicId));
+  } catch (error) { next(error); }
+});
+
+router.post('/work-packages/:workPackagePublicId/circuits', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['circuitReference', 'description', 'media', 'status']);
+    await db.transaction(async (trx) => {
+      const pack = await workPackageRow(trx, req.params.workPackagePublicId); const publicId = id();
+      await trx('circuits').insert({ public_id: publicId, work_package_id: pack.id, ...circuitValues(req.body) });
+      await audit.record(trx, req.user.id, 'circuit.create', 'circuit', publicId);
+    });
+    res.status(201).json(await packageDetail(req.params.workPackagePublicId));
+  } catch (error) { next(error); }
+});
+
+router.put('/work-packages/:workPackagePublicId/circuits/:publicId', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['circuitReference', 'description', 'media', 'status', '_baseVersion']);
+    const requestedVersion = baseVersion(req.body);
+    await db.transaction(async (trx) => {
+      const pack = await workPackageRow(trx, req.params.workPackagePublicId);
+      await updateChild(trx, 'circuits', { public_id: uuid(req.params.publicId, 'publicId'), work_package_id: pack.id }, requestedVersion, circuitValues(req.body), 'circuit_not_found', 'Circuit not found');
+      await audit.record(trx, req.user.id, 'circuit.update', 'circuit', req.params.publicId);
+    });
+    res.json(await packageDetail(req.params.workPackagePublicId));
+  } catch (error) { next(error); }
+});
+
+async function circuitRow(trx, workPackageId, publicId) {
+  const row = await trx('circuits').where({ public_id: uuid(publicId, 'circuitPublicId'), work_package_id: workPackageId }).first();
+  if (!row) throw httpError(404, 'circuit_not_found', 'Circuit not found');
+  return row;
+}
+
+router.post('/work-packages/:workPackagePublicId/circuits/:circuitPublicId/segments', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['segmentReference', 'sequence', 'fromEndpoint', 'toEndpoint', 'lengthMetres', 'notes']);
+    await db.transaction(async (trx) => {
+      const pack = await workPackageRow(trx, req.params.workPackagePublicId); const circuit = await circuitRow(trx, pack.id, req.params.circuitPublicId); const publicId = id();
+      await trx('segments').insert({ public_id: publicId, circuit_id: circuit.id, ...segmentValues(req.body) });
+      await audit.record(trx, req.user.id, 'segment.create', 'segment', publicId);
+    });
+    res.status(201).json(await packageDetail(req.params.workPackagePublicId));
+  } catch (error) { next(error); }
+});
+
+router.put('/work-packages/:workPackagePublicId/circuits/:circuitPublicId/segments/:publicId', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['segmentReference', 'sequence', 'fromEndpoint', 'toEndpoint', 'lengthMetres', 'notes', '_baseVersion']);
+    const requestedVersion = baseVersion(req.body);
+    await db.transaction(async (trx) => {
+      const pack = await workPackageRow(trx, req.params.workPackagePublicId); const circuit = await circuitRow(trx, pack.id, req.params.circuitPublicId);
+      await updateChild(trx, 'segments', { public_id: uuid(req.params.publicId, 'publicId'), circuit_id: circuit.id }, requestedVersion, segmentValues(req.body), 'segment_not_found', 'Segment not found');
+      await audit.record(trx, req.user.id, 'segment.update', 'segment', req.params.publicId);
+    });
+    res.json(await packageDetail(req.params.workPackagePublicId));
+  } catch (error) { next(error); }
+});
+
+router.post('/work-packages/:workPackagePublicId/consumable-requirements', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['cataloguePublicId', 'description', 'quantityRequired', 'unit']);
+    await db.transaction(async (trx) => {
+      const pack = await workPackageRow(trx, req.params.workPackagePublicId); const publicId = id();
+      await trx('consumable_requirements').insert({ public_id: publicId, work_package_id: pack.id, ...(await requirementValues(trx, req.body)) });
+      await audit.record(trx, req.user.id, 'consumable_requirement.create', 'consumable_requirement', publicId);
+    });
+    res.status(201).json(await packageDetail(req.params.workPackagePublicId));
+  } catch (error) { next(error); }
+});
+
+router.put('/work-packages/:workPackagePublicId/consumable-requirements/:publicId', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['cataloguePublicId', 'description', 'quantityRequired', 'unit', '_baseVersion']);
+    const requestedVersion = baseVersion(req.body);
+    await db.transaction(async (trx) => {
+      const pack = await workPackageRow(trx, req.params.workPackagePublicId);
+      await updateChild(trx, 'consumable_requirements', { public_id: uuid(req.params.publicId, 'publicId'), work_package_id: pack.id }, requestedVersion, await requirementValues(trx, req.body), 'consumable_requirement_not_found', 'Consumable requirement not found');
+      await audit.record(trx, req.user.id, 'consumable_requirement.update', 'consumable_requirement', req.params.publicId);
+    });
+    res.json(await packageDetail(req.params.workPackagePublicId));
   } catch (error) { next(error); }
 });
 
@@ -326,11 +494,11 @@ router.post('/catalogue/consumables', auth.requireAdmin, async (req, res, next) 
 router.put('/catalogue/consumables/:publicId', auth.requireAdmin, async (req, res, next) => {
   try {
     knownKeys(req.body, ['catalogueReference', 'description', 'estimatedUnitPrice', 'unit', 'active', '_baseVersion']);
-    const baseVersion = integer(req.body._baseVersion, '_baseVersion', { required: true, min: 0 });
+    const requestedVersion = baseVersion(req.body);
     if (typeof req.body.active !== 'boolean') throw httpError(422, 'invalid_field', 'active is invalid', 'active');
-    const changes = { catalogue_reference: string(req.body.catalogueReference, 'catalogueReference', { required: true, max: 255 }), description: string(req.body.description, 'description', { required: true, max: 255 }), estimated_unit_price: number(req.body.estimatedUnitPrice, 'estimatedUnitPrice', { min: 0, max: 1_000_000_000 }), unit: string(req.body.unit, 'unit', { required: true, max: 64 }), active: req.body.active ? 1 : 0, version: baseVersion + 1 };
+    const changes = { catalogue_reference: string(req.body.catalogueReference, 'catalogueReference', { required: true, max: 255 }), description: string(req.body.description, 'description', { required: true, max: 255 }), estimated_unit_price: number(req.body.estimatedUnitPrice, 'estimatedUnitPrice', { min: 0, max: 1_000_000_000 }), unit: string(req.body.unit, 'unit', { required: true, max: 64 }), active: req.body.active ? 1 : 0, version: requestedVersion + 1 };
     const updated = await db.transaction(async (trx) => {
-      const count = await trx('consumable_catalogue').where({ public_id: req.params.publicId, version: baseVersion }).update(changes);
+      const count = await trx('consumable_catalogue').where({ public_id: req.params.publicId, version: requestedVersion }).update(changes);
       if (!count) {
         const current = await trx('consumable_catalogue').where({ public_id: req.params.publicId }).first();
         if (!current) throw httpError(404, 'catalogue_record_not_found', 'Consumable catalogue record not found');
