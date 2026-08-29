@@ -313,9 +313,9 @@ async function apply(registry, draftId, actorUserId, approval) {
       } else if (decision !== 'defer') throw httpError(422, 'invalid_absence_decision', 'Import absence decision is invalid');
     }
     await trx('import_sources').where({ id: source.id }).update({ last_seen_at: now(), absent_at: null });
-    await trx('import_runs').where({ id: runId }).update({ status: 'applied', counts_json: JSON.stringify(counts), finished_at: now() });
-    await trx('import_drafts').where({ id: draftId }).update({ applied_run_id: runId });
     const workPackageProposal = proposal.entityProposals.find((entry) => entry.entityType === 'work_package');
+    await trx('import_runs').where({ id: runId }).update({ status: 'applied', primary_entity_public_id: workPackageProposal.entityPublicId, counts_json: JSON.stringify(counts), finished_at: now() });
+    await trx('import_drafts').where({ id: draftId }).update({ applied_run_id: runId });
     await audit.record(trx, actorUserId, 'import.apply', 'work_package', workPackageProposal.entityPublicId, { providerId: draft.providerId, runId, count: records.length });
     const run = await trx('import_runs').where({ id: runId }).first();
     return resultFromRun(run, workPackageProposal.entityPublicId);
@@ -326,7 +326,7 @@ function resultFromRun(run, workPackagePublicId) {
   return {
     schemaVersion: 'techsitemanager.io/import-result/v1', runId: run.public_id,
     status: run.status === 'applied' ? 'applied' : run.status,
-    workPackagePublicId: workPackagePublicId || null,
+    workPackagePublicId: workPackagePublicId || run.primary_entity_public_id || null,
     counts: JSON.parse(run.counts_json), warningCodes: JSON.parse(run.warning_codes_json),
     appliedAt: run.finished_at, attemptCount: run.attempt_count
   };

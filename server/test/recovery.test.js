@@ -35,6 +35,13 @@ test('database constraints defend roles, statuses, quantities, and foreign keys'
   const [siteId] = await db('sites').insert({ public_id: crypto.randomUUID(), code: 'REC-01', name: 'Recovery Lab' });
   await assert.rejects(db('work_packages').insert({ public_id: crypto.randomUUID(), site_id: siteId, package_ref: 'PKG-INVALID-STATUS', title: 'Invalid', status: 'unknown' }), /invalid work package status/);
   await assert.rejects(db('rooms').insert({ public_id: crypto.randomUUID(), site_id: 999999, name: 'Orphan' }), /FOREIGN KEY/);
+  const [packageId] = await db('work_packages').insert({ public_id: crypto.randomUUID(), site_id: siteId, package_ref: 'PKG-CONSTRAINTS', title: 'Constraint checks' });
+  await assert.rejects(db('work_items').insert({ public_id: crypto.randomUUID(), work_package_id: packageId, item_reference: 'ITEM-BAD', title: 'Invalid', status: 'unknown' }), /invalid work item status/);
+  await assert.rejects(db('devices').insert({ public_id: crypto.randomUUID(), site_id: siteId, hostname: 'UPPERCASE-DEVICE', device_key: 'invalid-device-case' }), /invalid device values/);
+  await assert.rejects(db('consumable_catalogue').insert({ public_id: crypto.randomUUID(), catalogue_reference: 'CAT-NEGATIVE', description: 'Invalid price', estimated_unit_price: -1 }), /price must be non-negative/);
+  const [requirementId] = await db('consumable_requirements').insert({ public_id: crypto.randomUUID(), work_package_id: packageId, description: 'Valid quantity', quantity_required: 1 });
+  await assert.rejects(db('consumable_requirements').where({ id: requirementId }).update({ quantity_required: 0 }), /quantity must be positive/);
+  await assert.rejects(db('import_field_ownership').insert({ entity_type: 'work_package', entity_public_id: crypto.randomUUID(), field_path: 'title', policy: 'unsupported', updated_at: new Date().toISOString() }), /invalid field ownership/);
 });
 
 test('SQLite-safe backup and restore preserve generic records and provenance', async () => {

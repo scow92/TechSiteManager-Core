@@ -10,6 +10,33 @@ const config = require('../config');
 const audit = require('../lib/audit');
 
 const router = express.Router();
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 5;
+const DUMMY_PASSWORD_HASH = `scrypt:${'00'.repeat(16)}:${'00'.repeat(64)}`;
+const loginFailures = new Map();
+
+function loginKey(req, username) {
+  return `${req.ip || req.socket.remoteAddress || 'unknown'}\u0000${username.toLowerCase()}`;
+}
+
+function currentFailures(key) {
+  const entry = loginFailures.get(key);
+  if (!entry || entry.expiresAt <= Date.now()) {
+    loginFailures.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function rejectIfThrottled(key) {
+  const entry = currentFailures(key);
+  if (entry && entry.count >= LOGIN_MAX_FAILURES) throw httpError(429, 'login_throttled', 'Too many login attempts; try again later');
+}
+
+function recordFailure(key) {
+  const entry = currentFailures(key);
+  loginFailures.set(key, { count: (entry ? entry.count : 0) + 1, expiresAt: Date.now() + LOGIN_WINDOW_MS });
+}
 
 function publicUser(user) {
   return { publicId: user.public_id, username: user.username, displayName: user.display_name, email: user.email, role: user.role, active: Boolean(user.active), version: user.version };
@@ -47,8 +74,16 @@ router.post('/login', async (req, res, next) => {
     knownKeys(req.body, ['username', 'password']);
     const username = string(req.body.username, 'username', { required: true, max: 64 });
     const password = string(req.body.password, 'password', { required: true, max: 200 });
+    const key = loginKey(req, username);
+    rejectIfThrottled(key);
     const user = await db('users').whereRaw('lower(username) = lower(?)', [username]).first();
-    if (!user || !user.active || !(await auth.verifyPassword(password, user.password_hash))) throw httpError(401, 'invalid_credentials', 'Invalid username or password');
+    const passwordMatches = await auth.verifyPassword(password, user && user.active ? user.password_hash : DUMMY_PASSWORD_HASH);
+    if (!user || !user.active || !passwordMatches) {
+      recordFailure(key);
+      rejectIfThrottled(key);
+      throw httpError(401, 'invalid_credentials', 'Invalid username or password');
+    }
+    loginFailures.delete(key);
     await auth.createSession(user.id, res, config.secureTransport);
     res.json(publicUser(user));
   } catch (error) { next(error); }

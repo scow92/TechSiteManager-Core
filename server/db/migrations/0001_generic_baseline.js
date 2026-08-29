@@ -22,6 +22,7 @@ exports.up = async function up(knex) {
     table.timestamp('expires_at').notNullable();
     table.timestamp('created_at').notNullable().defaultTo(knex.fn.now());
   });
+  await knex.raw('CREATE INDEX sessions_expires_at_index ON sessions(expires_at)');
 
   await knex.schema.createTable('sites', (table) => {
     table.increments('id').primary();
@@ -57,6 +58,7 @@ exports.up = async function up(knex) {
     table.integer('version').notNullable().defaultTo(0);
     table.unique(['site_id', 'room_id', 'label']);
   });
+  await knex.raw('CREATE UNIQUE INDEX racks_site_label_without_room_unique ON racks(site_id, label) WHERE room_id IS NULL');
 
   await knex.schema.createTable('termination_points', (table) => {
     table.increments('id').primary();
@@ -85,6 +87,7 @@ exports.up = async function up(knex) {
     table.unique(['site_id', 'hostname']);
     table.unique(['site_id', 'device_key']);
   });
+  await knex.raw('CREATE UNIQUE INDEX devices_site_hostname_lower_unique ON devices(site_id, lower(hostname))');
 
   await knex.schema.createTable('work_packages', (table) => {
     table.increments('id').primary();
@@ -216,6 +219,7 @@ exports.up = async function up(knex) {
     table.text('counts_json').notNullable().defaultTo('{}');
     table.text('warning_codes_json').notNullable().defaultTo('[]');
     table.text('decisions_json').notNullable().defaultTo('{}');
+    table.text('primary_entity_public_id');
     table.timestamp('started_at').notNullable();
     table.timestamp('finished_at');
     table.unique(['source_id', 'source_fingerprint']);
@@ -278,7 +282,26 @@ exports.up = async function up(knex) {
   await knex.raw("CREATE TRIGGER users_role_update BEFORE UPDATE OF role ON users WHEN NEW.role NOT IN ('admin','manager','engineer','viewer') BEGIN SELECT RAISE(ABORT, 'invalid role'); END");
   await knex.raw("CREATE TRIGGER work_packages_status_insert BEFORE INSERT ON work_packages WHEN NEW.status NOT IN ('planned','active','blocked','complete','cancelled') BEGIN SELECT RAISE(ABORT, 'invalid work package status'); END");
   await knex.raw("CREATE TRIGGER work_packages_status_update BEFORE UPDATE OF status ON work_packages WHEN NEW.status NOT IN ('planned','active','blocked','complete','cancelled') BEGIN SELECT RAISE(ABORT, 'invalid work package status'); END");
+  await knex.raw("CREATE TRIGGER work_items_status_insert BEFORE INSERT ON work_items WHEN NEW.status NOT IN ('planned','active','blocked','complete','cancelled') BEGIN SELECT RAISE(ABORT, 'invalid work item status'); END");
+  await knex.raw("CREATE TRIGGER work_items_status_update BEFORE UPDATE OF status ON work_items WHEN NEW.status NOT IN ('planned','active','blocked','complete','cancelled') BEGIN SELECT RAISE(ABORT, 'invalid work item status'); END");
+  await knex.raw("CREATE TRIGGER circuits_status_insert BEFORE INSERT ON circuits WHEN NEW.status NOT IN ('planned','active','blocked','complete','cancelled') BEGIN SELECT RAISE(ABORT, 'invalid circuit status'); END");
+  await knex.raw("CREATE TRIGGER circuits_status_update BEFORE UPDATE OF status ON circuits WHEN NEW.status NOT IN ('planned','active','blocked','complete','cancelled') BEGIN SELECT RAISE(ABORT, 'invalid circuit status'); END");
+  await knex.raw("CREATE TRIGGER racks_bounds_insert BEFORE INSERT ON racks WHEN NEW.size_units < 1 OR NEW.size_units > 100 BEGIN SELECT RAISE(ABORT, 'invalid rack size'); END");
+  await knex.raw("CREATE TRIGGER racks_bounds_update BEFORE UPDATE OF size_units ON racks WHEN NEW.size_units < 1 OR NEW.size_units > 100 BEGIN SELECT RAISE(ABORT, 'invalid rack size'); END");
+  await knex.raw("CREATE TRIGGER devices_values_insert BEFORE INSERT ON devices WHEN NEW.hostname <> lower(NEW.hostname) OR NEW.size_units < 1 OR NEW.size_units > 100 OR NEW.side NOT IN ('front','rear') OR (NEW.rack_unit IS NOT NULL AND (NEW.rack_unit < 1 OR NEW.rack_unit > 100)) BEGIN SELECT RAISE(ABORT, 'invalid device values'); END");
+  await knex.raw("CREATE TRIGGER devices_values_update BEFORE UPDATE ON devices WHEN NEW.hostname <> lower(NEW.hostname) OR NEW.size_units < 1 OR NEW.size_units > 100 OR NEW.side NOT IN ('front','rear') OR (NEW.rack_unit IS NOT NULL AND (NEW.rack_unit < 1 OR NEW.rack_unit > 100)) BEGIN SELECT RAISE(ABORT, 'invalid device values'); END");
+  await knex.raw("CREATE TRIGGER segment_length_insert BEFORE INSERT ON segments WHEN NEW.length_metres IS NOT NULL AND (NEW.length_metres < 0 OR NEW.length_metres > 1000000) BEGIN SELECT RAISE(ABORT, 'invalid segment length'); END");
+  await knex.raw("CREATE TRIGGER segment_length_update BEFORE UPDATE OF length_metres ON segments WHEN NEW.length_metres IS NOT NULL AND (NEW.length_metres < 0 OR NEW.length_metres > 1000000) BEGIN SELECT RAISE(ABORT, 'invalid segment length'); END");
   await knex.raw("CREATE TRIGGER consumable_quantity_insert BEFORE INSERT ON consumable_requirements WHEN NEW.quantity_required <= 0 BEGIN SELECT RAISE(ABORT, 'quantity must be positive'); END");
+  await knex.raw("CREATE TRIGGER consumable_quantity_update BEFORE UPDATE OF quantity_required ON consumable_requirements WHEN NEW.quantity_required <= 0 BEGIN SELECT RAISE(ABORT, 'quantity must be positive'); END");
+  await knex.raw("CREATE TRIGGER catalogue_price_insert BEFORE INSERT ON consumable_catalogue WHEN NEW.estimated_unit_price IS NOT NULL AND NEW.estimated_unit_price < 0 BEGIN SELECT RAISE(ABORT, 'price must be non-negative'); END");
+  await knex.raw("CREATE TRIGGER catalogue_price_update BEFORE UPDATE OF estimated_unit_price ON consumable_catalogue WHEN NEW.estimated_unit_price IS NOT NULL AND NEW.estimated_unit_price < 0 BEGIN SELECT RAISE(ABORT, 'price must be non-negative'); END");
+  await knex.raw("CREATE TRIGGER distance_length_insert BEFORE INSERT ON distance_samples WHEN NEW.length_metres <= 0 OR NEW.length_metres > 1000000 BEGIN SELECT RAISE(ABORT, 'invalid distance length'); END");
+  await knex.raw("CREATE TRIGGER import_link_entity_insert BEFORE INSERT ON import_entity_links WHEN NEW.entity_type NOT IN ('work_package','work_item','circuit','segment') BEGIN SELECT RAISE(ABORT, 'invalid import entity type'); END");
+  await knex.raw("CREATE TRIGGER import_link_state_insert BEFORE INSERT ON import_entity_links WHEN NEW.reconciliation_state NOT IN ('linked','absent') BEGIN SELECT RAISE(ABORT, 'invalid reconciliation state'); END");
+  await knex.raw("CREATE TRIGGER import_link_state_update BEFORE UPDATE OF reconciliation_state ON import_entity_links WHEN NEW.reconciliation_state NOT IN ('linked','absent') BEGIN SELECT RAISE(ABORT, 'invalid reconciliation state'); END");
+  await knex.raw("CREATE TRIGGER field_ownership_policy_insert BEFORE INSERT ON import_field_ownership WHEN NEW.policy NOT IN ('source-owned','user-owned','source-default','review-required') BEGIN SELECT RAISE(ABORT, 'invalid field ownership'); END");
+  await knex.raw("CREATE TRIGGER field_ownership_policy_update BEFORE UPDATE OF policy ON import_field_ownership WHEN NEW.policy NOT IN ('source-owned','user-owned','source-default','review-required') BEGIN SELECT RAISE(ABORT, 'invalid field ownership'); END");
 };
 
 exports.down = async function down(knex) {

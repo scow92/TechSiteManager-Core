@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const db = require('../db/knex');
 const auth = require('../lib/auth');
 const audit = require('../lib/audit');
-const { knownKeys, string, integer, enumeration, uuid } = require('../lib/validation');
+const { knownKeys, string, integer, number, array, enumeration, uuid } = require('../lib/validation');
 const { httpError } = require('../lib/errors');
 
 const router = express.Router();
@@ -21,6 +21,31 @@ async function siteByPublicId(publicId, trx = db) {
 
 function publicSite(row) {
   return { publicId: row.public_id, code: row.code, name: row.name, description: row.description, version: row.version };
+}
+
+function assignees(value, path = 'assignees') {
+  return array(value, path, { max: 50 }).map((entry, index) => string(entry, `${path}[${index}]`, { required: true, max: 64 }));
+}
+
+function publicInfrastructure(kind, row) {
+  const common = { publicId: row.public_id, version: row.version };
+  if (kind === 'rooms') return { ...common, name: row.name, description: row.description };
+  if (kind === 'racks') return { ...common, label: row.label, suiteLine: row.suite_line, sizeUnits: row.size_units, roomPublicId: row.room_public_id || null };
+  if (kind === 'termination-points') return { ...common, label: row.label, kind: row.kind, notes: row.notes, roomPublicId: row.room_public_id || null };
+  if (kind === 'devices') return { ...common, hostname: row.hostname, label: row.label, deviceKey: row.device_key, rackPublicId: row.rack_public_id || null, rackUnit: row.rack_unit, sizeUnits: row.size_units, side: row.side };
+  return { publicId: row.public_id, endpointA: row.endpoint_a, endpointB: row.endpoint_b, media: row.media, lengthMetres: row.length_metres, observedAt: row.observed_at };
+}
+
+async function withInfrastructureRelation(kind, row, trx = db) {
+  if (['racks', 'termination-points'].includes(kind) && row.room_id) {
+    const related = await trx('rooms').where({ id: row.room_id }).select('public_id').first();
+    return { ...row, room_public_id: related && related.public_id };
+  }
+  if (kind === 'devices' && row.rack_id) {
+    const related = await trx('racks').where({ id: row.rack_id }).select('public_id').first();
+    return { ...row, rack_public_id: related && related.public_id };
+  }
+  return row;
 }
 
 router.use(auth.requireSession);
@@ -47,13 +72,17 @@ router.put('/sites/:publicId', auth.requireWrite, async (req, res, next) => {
     knownKeys(req.body, ['code', 'name', 'description', '_baseVersion']);
     const baseVersion = integer(req.body._baseVersion, '_baseVersion', { required: true, min: 0 });
     const changes = { code: string(req.body.code, 'code', { required: true, max: 64 }), name: string(req.body.name, 'name', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', version: baseVersion + 1, updated_at: db.fn.now() };
-    const updated = await db('sites').where({ public_id: req.params.publicId, version: baseVersion }).update(changes);
-    if (!updated) {
-      const current = await db('sites').where({ public_id: req.params.publicId }).first();
-      if (!current) throw httpError(404, 'site_not_found', 'Site not found');
-      throw httpError(409, 'version_conflict', 'The site changed since it was loaded');
-    }
-    res.json(publicSite(await db('sites').where({ public_id: req.params.publicId }).first()));
+    const updated = await db.transaction(async (trx) => {
+      const count = await trx('sites').where({ public_id: req.params.publicId, version: baseVersion }).update(changes);
+      if (!count) {
+        const current = await trx('sites').where({ public_id: req.params.publicId }).first();
+        if (!current) throw httpError(404, 'site_not_found', 'Site not found');
+        throw httpError(409, 'version_conflict', 'The site changed since it was loaded');
+      }
+      await audit.record(trx, req.user.id, 'site.update', 'site', req.params.publicId);
+      return trx('sites').where({ public_id: req.params.publicId }).first();
+    });
+    res.json(publicSite(updated));
   } catch (error) { next(error); }
 });
 
@@ -63,8 +92,49 @@ function infrastructureSpec(kind) {
     racks: { table: 'racks', fields: ['label', 'suiteLine', 'sizeUnits', 'roomPublicId'] },
     'termination-points': { table: 'termination_points', fields: ['label', 'kind', 'notes', 'roomPublicId'] },
     devices: { table: 'devices', fields: ['hostname', 'label', 'deviceKey', 'rackPublicId', 'rackUnit', 'sizeUnits', 'side'] },
-    distances: { table: 'distance_samples', fields: ['endpointA', 'endpointB', 'media', 'lengthMetres'] }
+    distances: { table: 'distance_samples', fields: ['endpointA', 'endpointB', 'media', 'lengthMetres'], appendOnly: true }
   }[kind];
+}
+
+async function relatedId(trx, table, publicId, siteId, field) {
+  if (publicId === undefined || publicId === null || publicId === '') return null;
+  const row = await trx(table).where({ public_id: uuid(publicId, field), site_id: siteId }).first();
+  if (!row) throw httpError(422, `${field === 'roomPublicId' ? 'room' : 'rack'}_site_mismatch`, `${field === 'roomPublicId' ? 'Room' : 'Rack'} does not belong to the site`);
+  return row.id;
+}
+
+async function infrastructureValues(kind, body, site, trx) {
+  if (kind === 'rooms') return {
+    name: string(body.name, 'name', { required: true, max: 255 }),
+    description: string(body.description, 'description', { max: 20_000 }) || ''
+  };
+  if (kind === 'racks') return {
+    label: string(body.label, 'label', { required: true, max: 120 }),
+    suite_line: string(body.suiteLine, 'suiteLine', { max: 64 }) || '',
+    size_units: integer(body.sizeUnits === undefined ? 47 : body.sizeUnits, 'sizeUnits', { required: true, min: 1, max: 100 }),
+    room_id: await relatedId(trx, 'rooms', body.roomPublicId, site.id, 'roomPublicId')
+  };
+  if (kind === 'termination-points') return {
+    label: string(body.label, 'label', { required: true, max: 120 }),
+    kind: string(body.kind, 'kind', { required: true, max: 64 }),
+    notes: string(body.notes, 'notes', { max: 20_000 }) || '',
+    room_id: await relatedId(trx, 'rooms', body.roomPublicId, site.id, 'roomPublicId')
+  };
+  if (kind === 'devices') return {
+    hostname: string(body.hostname, 'hostname', { required: true, max: 255 }).toLowerCase(),
+    label: string(body.label, 'label', { max: 255 }) || '',
+    device_key: string(body.deviceKey, 'deviceKey', { required: true, max: 128 }),
+    rack_id: await relatedId(trx, 'racks', body.rackPublicId, site.id, 'rackPublicId'),
+    rack_unit: integer(body.rackUnit, 'rackUnit', { min: 1, max: 100 }),
+    size_units: integer(body.sizeUnits === undefined ? 1 : body.sizeUnits, 'sizeUnits', { required: true, min: 1, max: 100 }),
+    side: enumeration(body.side || 'front', 'side', ['front', 'rear'], true)
+  };
+  return {
+    endpoint_a: string(body.endpointA, 'endpointA', { required: true, max: 255 }),
+    endpoint_b: string(body.endpointB, 'endpointB', { required: true, max: 255 }),
+    media: string(body.media, 'media', { required: true, max: 64 }),
+    length_metres: number(body.lengthMetres, 'lengthMetres', { required: true, min: Number.EPSILON, max: 1_000_000 })
+  };
 }
 
 router.get('/sites/:sitePublicId/:kind', async (req, res, next) => {
@@ -73,7 +143,7 @@ router.get('/sites/:sitePublicId/:kind', async (req, res, next) => {
     if (!spec) throw httpError(404, 'route_not_found', 'Route not found');
     const site = await siteByPublicId(req.params.sitePublicId);
     const rows = await db(spec.table).where({ site_id: site.id }).orderBy('id');
-    res.json(rows.map((row) => ({ ...row, id: undefined, site_id: undefined, publicId: row.public_id })));
+    res.json(await Promise.all(rows.map(async (row) => publicInfrastructure(req.params.kind, await withInfrastructureRelation(req.params.kind, row)))));
   } catch (error) { next(error); }
 });
 
@@ -82,25 +152,36 @@ router.post('/sites/:sitePublicId/:kind', auth.requireWrite, async (req, res, ne
     const spec = infrastructureSpec(req.params.kind);
     if (!spec) throw httpError(404, 'route_not_found', 'Route not found');
     knownKeys(req.body, spec.fields);
-    const site = await siteByPublicId(req.params.sitePublicId);
-    const record = { public_id: id(), site_id: site.id };
-    if (req.params.kind === 'rooms') {
-      record.name = string(req.body.name, 'name', { required: true, max: 255 }); record.description = string(req.body.description, 'description', { max: 20_000 }) || '';
-    } else if (req.params.kind === 'racks') {
-      record.label = string(req.body.label, 'label', { required: true, max: 120 }); record.suite_line = string(req.body.suiteLine, 'suiteLine', { max: 64 }) || ''; record.size_units = integer(req.body.sizeUnits, 'sizeUnits', { min: 1, max: 100 }) || 47;
-      if (req.body.roomPublicId) { const room = await db('rooms').where({ public_id: uuid(req.body.roomPublicId, 'roomPublicId'), site_id: site.id }).first(); if (!room) throw httpError(422, 'room_site_mismatch', 'Room does not belong to the site'); record.room_id = room.id; }
-    } else if (req.params.kind === 'termination-points') {
-      record.label = string(req.body.label, 'label', { required: true, max: 120 }); record.kind = string(req.body.kind, 'kind', { required: true, max: 64 }); record.notes = string(req.body.notes, 'notes', { max: 20_000 }) || '';
-      if (req.body.roomPublicId) { const room = await db('rooms').where({ public_id: uuid(req.body.roomPublicId, 'roomPublicId'), site_id: site.id }).first(); if (!room) throw httpError(422, 'room_site_mismatch', 'Room does not belong to the site'); record.room_id = room.id; }
-    } else if (req.params.kind === 'devices') {
-      record.hostname = string(req.body.hostname, 'hostname', { required: true, max: 255 }).toLowerCase(); record.label = string(req.body.label, 'label', { max: 255 }) || ''; record.device_key = string(req.body.deviceKey, 'deviceKey', { required: true, max: 128 }); record.rack_unit = integer(req.body.rackUnit, 'rackUnit', { min: 1, max: 100 }); record.size_units = integer(req.body.sizeUnits, 'sizeUnits', { min: 1, max: 100 }) || 1; record.side = enumeration(req.body.side || 'front', 'side', ['front', 'rear'], true);
-      if (req.body.rackPublicId) { const rack = await db('racks').where({ public_id: uuid(req.body.rackPublicId, 'rackPublicId'), site_id: site.id }).first(); if (!rack) throw httpError(422, 'rack_site_mismatch', 'Rack does not belong to the site'); record.rack_id = rack.id; }
-    } else {
-      record.endpoint_a = string(req.body.endpointA, 'endpointA', { required: true, max: 255 }); record.endpoint_b = string(req.body.endpointB, 'endpointB', { required: true, max: 255 }); record.media = string(req.body.media, 'media', { required: true, max: 64 });
-      if (typeof req.body.lengthMetres !== 'number' || req.body.lengthMetres <= 0 || req.body.lengthMetres > 1000000) throw httpError(422, 'invalid_length', 'lengthMetres is invalid'); record.length_metres = req.body.lengthMetres;
-    }
-    const [rowId] = await db(spec.table).insert(record);
-    res.status(201).json({ ...(await db(spec.table).where({ id: rowId }).first()), id: undefined, site_id: undefined, publicId: record.public_id });
+    const created = await db.transaction(async (trx) => {
+      const site = await siteByPublicId(req.params.sitePublicId, trx);
+      const record = { public_id: id(), site_id: site.id, ...(await infrastructureValues(req.params.kind, req.body, site, trx)) };
+      const [rowId] = await trx(spec.table).insert(record);
+      await audit.record(trx, req.user.id, `${req.params.kind}.create`, req.params.kind, record.public_id);
+      return withInfrastructureRelation(req.params.kind, await trx(spec.table).where({ id: rowId }).first(), trx);
+    });
+    res.status(201).json(publicInfrastructure(req.params.kind, created));
+  } catch (error) { next(error); }
+});
+
+router.put('/sites/:sitePublicId/:kind/:publicId', auth.requireWrite, async (req, res, next) => {
+  try {
+    const spec = infrastructureSpec(req.params.kind);
+    if (!spec || spec.appendOnly) throw httpError(404, 'route_not_found', 'Route not found');
+    knownKeys(req.body, [...spec.fields, '_baseVersion']);
+    const baseVersion = integer(req.body._baseVersion, '_baseVersion', { required: true, min: 0 });
+    const updated = await db.transaction(async (trx) => {
+      const site = await siteByPublicId(req.params.sitePublicId, trx);
+      const changes = { ...(await infrastructureValues(req.params.kind, req.body, site, trx)), version: baseVersion + 1 };
+      const count = await trx(spec.table).where({ public_id: req.params.publicId, site_id: site.id, version: baseVersion }).update(changes);
+      if (!count) {
+        const current = await trx(spec.table).where({ public_id: req.params.publicId, site_id: site.id }).first();
+        if (!current) throw httpError(404, 'infrastructure_not_found', 'Record not found');
+        throw httpError(409, 'version_conflict', 'The record changed since it was loaded');
+      }
+      await audit.record(trx, req.user.id, `${req.params.kind}.update`, req.params.kind, req.params.publicId);
+      return withInfrastructureRelation(req.params.kind, await trx(spec.table).where({ public_id: req.params.publicId }).first(), trx);
+    });
+    res.json(publicInfrastructure(req.params.kind, updated));
   } catch (error) { next(error); }
 });
 
@@ -136,16 +217,37 @@ router.get('/work-packages/:publicId', async (req, res, next) => {
 router.post('/work-packages', auth.requireWrite, async (req, res, next) => {
   try {
     knownKeys(req.body, ['sitePublicId', 'packageReference', 'externalReference', 'projectReference', 'title', 'description', 'status', 'leadAssignee', 'assignees', 'workItems', 'circuits', 'consumableRequirements']);
+    const workItems = array(req.body.workItems, 'workItems', { max: 1000 });
+    const circuits = array(req.body.circuits, 'circuits', { max: 10_000 });
+    const requirements = array(req.body.consumableRequirements, 'consumableRequirements', { max: 1000 });
+    const assigned = assignees(req.body.assignees);
     const createdPublicId = id();
     await db.transaction(async (trx) => {
       const site = await siteByPublicId(uuid(req.body.sitePublicId, 'sitePublicId'), trx);
-      const [packageId] = await trx('work_packages').insert({ public_id: createdPublicId, site_id: site.id, package_ref: string(req.body.packageReference, 'packageReference', { required: true, max: 255 }), external_reference: string(req.body.externalReference, 'externalReference', { max: 255 }), project_reference: string(req.body.projectReference, 'projectReference', { max: 255 }), title: string(req.body.title, 'title', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', status: enumeration(req.body.status || 'planned', 'status', PACKAGE_STATUSES, true), lead_assignee: string(req.body.leadAssignee, 'leadAssignee', { max: 64 }), assignees_json: JSON.stringify(Array.isArray(req.body.assignees) ? req.body.assignees.slice(0, 50) : []) });
-      for (const [sequence, item] of (req.body.workItems || []).entries()) await trx('work_items').insert({ public_id: id(), work_package_id: packageId, item_reference: string(item.itemReference, 'workItems.itemReference', { required: true, max: 255 }), title: string(item.title, 'workItems.title', { required: true, max: 255 }), description: string(item.description, 'workItems.description', { max: 20_000 }) || '', status: enumeration(item.status || 'planned', 'workItems.status', PACKAGE_STATUSES, true), sequence });
-      for (const circuit of req.body.circuits || []) {
-        const [circuitId] = await trx('circuits').insert({ public_id: id(), work_package_id: packageId, circuit_reference: string(circuit.circuitReference, 'circuits.circuitReference', { required: true, max: 255 }), description: string(circuit.description, 'circuits.description', { max: 20_000 }) || '', media: string(circuit.media, 'circuits.media', { required: true, max: 64 }), status: enumeration(circuit.status || 'planned', 'circuits.status', PACKAGE_STATUSES, true) });
-        for (const [sequence, segment] of (circuit.segments || []).entries()) await trx('segments').insert({ public_id: id(), circuit_id: circuitId, segment_reference: string(segment.segmentReference, 'segments.segmentReference', { required: true, max: 255 }), sequence, from_endpoint: string(segment.fromEndpoint, 'segments.fromEndpoint', { required: true, max: 255 }), to_endpoint: string(segment.toEndpoint, 'segments.toEndpoint', { required: true, max: 255 }), length_metres: segment.lengthMetres || null, notes: string(segment.notes, 'segments.notes', { max: 20_000 }) || '' });
+      const [packageId] = await trx('work_packages').insert({ public_id: createdPublicId, site_id: site.id, package_ref: string(req.body.packageReference, 'packageReference', { required: true, max: 255 }), external_reference: string(req.body.externalReference, 'externalReference', { max: 255 }), project_reference: string(req.body.projectReference, 'projectReference', { max: 255 }), title: string(req.body.title, 'title', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', status: enumeration(req.body.status || 'planned', 'status', PACKAGE_STATUSES, true), lead_assignee: string(req.body.leadAssignee, 'leadAssignee', { max: 64 }), assignees_json: JSON.stringify(assigned) });
+      for (const [sequence, item] of workItems.entries()) {
+        knownKeys(item, ['itemReference', 'title', 'description', 'status'], `workItems[${sequence}]`);
+        await trx('work_items').insert({ public_id: id(), work_package_id: packageId, item_reference: string(item.itemReference, `workItems[${sequence}].itemReference`, { required: true, max: 255 }), title: string(item.title, `workItems[${sequence}].title`, { required: true, max: 255 }), description: string(item.description, `workItems[${sequence}].description`, { max: 20_000 }) || '', status: enumeration(item.status || 'planned', `workItems[${sequence}].status`, PACKAGE_STATUSES, true), sequence });
       }
-      for (const requirement of req.body.consumableRequirements || []) await trx('consumable_requirements').insert({ public_id: id(), work_package_id: packageId, description: string(requirement.description, 'consumableRequirements.description', { required: true, max: 255 }), quantity_required: requirement.quantityRequired, unit: string(requirement.unit, 'consumableRequirements.unit', { required: true, max: 64 }) });
+      for (const [circuitIndex, circuit] of circuits.entries()) {
+        knownKeys(circuit, ['circuitReference', 'description', 'media', 'status', 'segments'], `circuits[${circuitIndex}]`);
+        const segments = array(circuit.segments, `circuits[${circuitIndex}].segments`, { max: 100 });
+        const [circuitId] = await trx('circuits').insert({ public_id: id(), work_package_id: packageId, circuit_reference: string(circuit.circuitReference, `circuits[${circuitIndex}].circuitReference`, { required: true, max: 255 }), description: string(circuit.description, `circuits[${circuitIndex}].description`, { max: 20_000 }) || '', media: string(circuit.media, `circuits[${circuitIndex}].media`, { required: true, max: 64 }), status: enumeration(circuit.status || 'planned', `circuits[${circuitIndex}].status`, PACKAGE_STATUSES, true) });
+        for (const [sequence, segment] of segments.entries()) {
+          knownKeys(segment, ['segmentReference', 'fromEndpoint', 'toEndpoint', 'lengthMetres', 'notes'], `circuits[${circuitIndex}].segments[${sequence}]`);
+          await trx('segments').insert({ public_id: id(), circuit_id: circuitId, segment_reference: string(segment.segmentReference, `circuits[${circuitIndex}].segments[${sequence}].segmentReference`, { required: true, max: 255 }), sequence, from_endpoint: string(segment.fromEndpoint, `circuits[${circuitIndex}].segments[${sequence}].fromEndpoint`, { required: true, max: 255 }), to_endpoint: string(segment.toEndpoint, `circuits[${circuitIndex}].segments[${sequence}].toEndpoint`, { required: true, max: 255 }), length_metres: number(segment.lengthMetres, `circuits[${circuitIndex}].segments[${sequence}].lengthMetres`, { min: 0, max: 1_000_000 }), notes: string(segment.notes, `circuits[${circuitIndex}].segments[${sequence}].notes`, { max: 20_000 }) || '' });
+        }
+      }
+      for (const [index, requirement] of requirements.entries()) {
+        knownKeys(requirement, ['cataloguePublicId', 'description', 'quantityRequired', 'unit'], `consumableRequirements[${index}]`);
+        let catalogueId = null;
+        if (requirement.cataloguePublicId) {
+          const catalogue = await trx('consumable_catalogue').where({ public_id: uuid(requirement.cataloguePublicId, `consumableRequirements[${index}].cataloguePublicId`) }).first();
+          if (!catalogue) throw httpError(422, 'catalogue_record_not_found', 'Consumable catalogue record not found');
+          catalogueId = catalogue.id;
+        }
+        await trx('consumable_requirements').insert({ public_id: id(), work_package_id: packageId, catalogue_id: catalogueId, description: string(requirement.description, `consumableRequirements[${index}].description`, { required: true, max: 255 }), quantity_required: number(requirement.quantityRequired, `consumableRequirements[${index}].quantityRequired`, { required: true, min: Number.EPSILON, max: 1_000_000 }), unit: string(requirement.unit, `consumableRequirements[${index}].unit`, { required: true, max: 64 }) });
+      }
       await audit.record(trx, req.user.id, 'work_package.create', 'work_package', createdPublicId);
     });
     res.status(201).json(await packageDetail(createdPublicId));
@@ -157,13 +259,16 @@ router.put('/work-packages/:publicId', auth.requireWrite, async (req, res, next)
     if (!Number.isInteger(req.body._baseVersion)) throw httpError(428, 'base_version_required', '_baseVersion is required');
     const baseVersion = integer(req.body._baseVersion, '_baseVersion', { required: true, min: 0 });
     knownKeys(req.body, ['packageReference', 'externalReference', 'projectReference', 'title', 'description', 'status', 'leadAssignee', 'assignees', '_baseVersion']);
-    const changes = { package_ref: string(req.body.packageReference, 'packageReference', { required: true, max: 255 }), external_reference: string(req.body.externalReference, 'externalReference', { max: 255 }), project_reference: string(req.body.projectReference, 'projectReference', { max: 255 }), title: string(req.body.title, 'title', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', status: enumeration(req.body.status, 'status', PACKAGE_STATUSES, true), lead_assignee: string(req.body.leadAssignee, 'leadAssignee', { max: 64 }), assignees_json: JSON.stringify(Array.isArray(req.body.assignees) ? req.body.assignees.slice(0, 50) : []), version: baseVersion + 1, updated_at: db.fn.now() };
-    const updated = await db('work_packages').where({ public_id: req.params.publicId, version: baseVersion }).update(changes);
-    if (!updated) {
-      const current = await db('work_packages').where({ public_id: req.params.publicId }).first();
-      if (!current) throw httpError(404, 'work_package_not_found', 'Work package not found');
-      throw httpError(409, 'version_conflict', 'The work package changed since it was loaded');
-    }
+    const changes = { package_ref: string(req.body.packageReference, 'packageReference', { required: true, max: 255 }), external_reference: string(req.body.externalReference, 'externalReference', { max: 255 }), project_reference: string(req.body.projectReference, 'projectReference', { max: 255 }), title: string(req.body.title, 'title', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', status: enumeration(req.body.status, 'status', PACKAGE_STATUSES, true), lead_assignee: string(req.body.leadAssignee, 'leadAssignee', { max: 64 }), assignees_json: JSON.stringify(assignees(req.body.assignees)), version: baseVersion + 1, updated_at: db.fn.now() };
+    await db.transaction(async (trx) => {
+      const updated = await trx('work_packages').where({ public_id: req.params.publicId, version: baseVersion }).update(changes);
+      if (!updated) {
+        const current = await trx('work_packages').where({ public_id: req.params.publicId }).first();
+        if (!current) throw httpError(404, 'work_package_not_found', 'Work package not found');
+        throw httpError(409, 'version_conflict', 'The work package changed since it was loaded');
+      }
+      await audit.record(trx, req.user.id, 'work_package.update', 'work_package', req.params.publicId);
+    });
     res.json(await packageDetail(req.params.publicId));
   } catch (error) { next(error); }
 });
@@ -171,12 +276,33 @@ router.put('/work-packages/:publicId', auth.requireWrite, async (req, res, next)
 router.get('/search', async (req, res, next) => {
   try {
     const query = string(req.query.q, 'q', { required: true, max: 255 }).toLowerCase();
+    const scope = enumeration(req.query.scope || 'packages', 'scope', ['packages', 'all'], true);
     const pattern = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
     const rows = await db('work_packages as w').join('sites as s', 's.id', 'w.site_id')
       .leftJoin('work_items as i', 'i.work_package_id', 'w.id')
-      .where((builder) => builder.whereRaw('lower(w.package_ref) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(w.external_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(w.project_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(w.title) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(w.description) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(s.code) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(s.name) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.item_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.description, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]))
+      .leftJoin('circuits as c', 'c.work_package_id', 'w.id')
+      .leftJoin('segments as g', 'g.circuit_id', 'c.id')
+      .where((builder) => builder.whereRaw('lower(w.package_ref) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(w.external_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(w.project_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(w.title) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(w.description) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(s.code) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(s.name) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.item_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.description, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(c.circuit_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(c.description, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(g.segment_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(g.from_endpoint, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(g.to_endpoint, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]))
       .distinct('w.public_id', 'w.package_ref', 'w.external_reference', 'w.project_reference', 'w.title', 'w.status', 's.code as site_code', 's.name as site_name').limit(100);
-    res.json(rows.map((row) => ({ publicId: row.public_id, packageReference: row.package_ref, externalReference: row.external_reference, projectReference: row.project_reference, title: row.title, status: row.status, siteCode: row.site_code, siteName: row.site_name })));
+    const results = rows.map((row) => ({ entityType: 'work_package', publicId: row.public_id, packageReference: row.package_ref, externalReference: row.external_reference, projectReference: row.project_reference, title: row.title, status: row.status, siteCode: row.site_code, siteName: row.site_name }));
+    if (scope === 'all' && results.length < 100) {
+      const siteRows = await db('sites').where((builder) => builder.whereRaw('lower(code) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(name) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(description) LIKE ? ESCAPE \'\\\'', [pattern])).limit(100);
+      results.push(...siteRows.map((row) => ({ entityType: 'site', publicId: row.public_id, title: row.name, reference: row.code, description: row.description, siteCode: row.code })));
+      const infrastructure = [
+        ['room', 'rooms', ['e.name', 'e.description'], 'e.name'],
+        ['rack', 'racks', ['e.label', 'e.suite_line'], 'e.label'],
+        ['termination_point', 'termination_points', ['e.label', 'e.kind', 'e.notes'], 'e.label'],
+        ['device', 'devices', ['e.hostname', 'e.label', 'e.device_key'], 'e.hostname'],
+        ['distance', 'distance_samples', ['e.endpoint_a', 'e.endpoint_b', 'e.media'], 'e.endpoint_a']
+      ];
+      for (const [entityType, table, columns, titleColumn] of infrastructure) {
+        const matches = await db(`${table} as e`).join('sites as s', 's.id', 'e.site_id').where((builder) => {
+          columns.forEach((column, index) => builder[index ? 'orWhereRaw' : 'whereRaw'](`lower(coalesce(${column}, '')) LIKE ? ESCAPE '\\'`, [pattern]));
+        }).select('e.public_id', 's.code as site_code', 's.name as site_name', db.raw(`${titleColumn} as result_title`)).limit(100);
+        results.push(...matches.map((row) => ({ entityType, publicId: row.public_id, title: row.result_title, siteCode: row.site_code, siteName: row.site_name })));
+      }
+    }
+    res.json(results.slice(0, 100));
   } catch (error) { next(error); }
 });
 
@@ -204,18 +330,53 @@ router.get('/catalogue/consumables', async (_req, res, next) => {
 router.post('/catalogue/consumables', auth.requireAdmin, async (req, res, next) => {
   try {
     knownKeys(req.body, ['catalogueReference', 'description', 'estimatedUnitPrice', 'unit']);
-    if (req.body.estimatedUnitPrice !== undefined && (typeof req.body.estimatedUnitPrice !== 'number' || req.body.estimatedUnitPrice < 0)) throw httpError(422, 'invalid_price', 'estimatedUnitPrice is invalid');
     const publicId = id();
-    await db('consumable_catalogue').insert({ public_id: publicId, catalogue_reference: string(req.body.catalogueReference, 'catalogueReference', { required: true, max: 255 }), description: string(req.body.description, 'description', { required: true, max: 255 }), estimated_unit_price: req.body.estimatedUnitPrice === undefined ? null : req.body.estimatedUnitPrice, unit: string(req.body.unit || 'each', 'unit', { required: true, max: 64 }) });
-    res.status(201).json({ publicId });
+    const created = await db.transaction(async (trx) => {
+      const [rowId] = await trx('consumable_catalogue').insert({ public_id: publicId, catalogue_reference: string(req.body.catalogueReference, 'catalogueReference', { required: true, max: 255 }), description: string(req.body.description, 'description', { required: true, max: 255 }), estimated_unit_price: number(req.body.estimatedUnitPrice, 'estimatedUnitPrice', { min: 0, max: 1_000_000_000 }), unit: string(req.body.unit || 'each', 'unit', { required: true, max: 64 }) });
+      await audit.record(trx, req.user.id, 'consumable.create', 'consumable', publicId);
+      return trx('consumable_catalogue').where({ id: rowId }).first();
+    });
+    res.status(201).json({ publicId, catalogueReference: created.catalogue_reference, description: created.description, estimatedUnitPrice: created.estimated_unit_price, unit: created.unit, active: Boolean(created.active), version: created.version });
   } catch (error) { next(error); }
 });
 
+router.put('/catalogue/consumables/:publicId', auth.requireAdmin, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['catalogueReference', 'description', 'estimatedUnitPrice', 'unit', 'active', '_baseVersion']);
+    const baseVersion = integer(req.body._baseVersion, '_baseVersion', { required: true, min: 0 });
+    if (typeof req.body.active !== 'boolean') throw httpError(422, 'invalid_field', 'active is invalid', 'active');
+    const changes = { catalogue_reference: string(req.body.catalogueReference, 'catalogueReference', { required: true, max: 255 }), description: string(req.body.description, 'description', { required: true, max: 255 }), estimated_unit_price: number(req.body.estimatedUnitPrice, 'estimatedUnitPrice', { min: 0, max: 1_000_000_000 }), unit: string(req.body.unit, 'unit', { required: true, max: 64 }), active: req.body.active ? 1 : 0, version: baseVersion + 1 };
+    const updated = await db.transaction(async (trx) => {
+      const count = await trx('consumable_catalogue').where({ public_id: req.params.publicId, version: baseVersion }).update(changes);
+      if (!count) {
+        const current = await trx('consumable_catalogue').where({ public_id: req.params.publicId }).first();
+        if (!current) throw httpError(404, 'catalogue_record_not_found', 'Consumable catalogue record not found');
+        throw httpError(409, 'version_conflict', 'The catalogue record changed since it was loaded');
+      }
+      await audit.record(trx, req.user.id, 'consumable.update', 'consumable', req.params.publicId);
+      return trx('consumable_catalogue').where({ public_id: req.params.publicId }).first();
+    });
+    res.json({ publicId: updated.public_id, catalogueReference: updated.catalogue_reference, description: updated.description, estimatedUnitPrice: updated.estimated_unit_price, unit: updated.unit, active: Boolean(updated.active), version: updated.version });
+  } catch (error) { next(error); }
+});
+
+async function photoEntity(entityType, publicId, trx = db) {
+  const table = { rack: 'racks', device: 'devices', work_package: 'work_packages' }[entityType];
+  if (!table) throw httpError(415, 'photo_type_invalid', 'Photo entity type is invalid');
+  const entity = await trx(table).where({ public_id: uuid(publicId, 'entityPublicId') }).first();
+  if (!entity) throw httpError(404, 'photo_entity_not_found', 'Photo entity not found');
+  return entity;
+}
+
 router.post('/photos/:entityType/:entityPublicId', auth.requireWrite, express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '10mb' }), async (req, res, next) => {
   try {
-    if (!['rack', 'device', 'work_package'].includes(req.params.entityType) || !Buffer.isBuffer(req.body) || !req.body.length) throw httpError(415, 'photo_type_invalid', 'Photo must be JPEG, PNG, or WebP');
+    if (!Buffer.isBuffer(req.body) || !req.body.length) throw httpError(415, 'photo_type_invalid', 'Photo must be JPEG, PNG, or WebP');
     const publicId = id();
-    await db('photos').insert({ public_id: publicId, entity_type: req.params.entityType, entity_public_id: uuid(req.params.entityPublicId, 'entityPublicId'), name: string(req.headers['x-photo-name'], 'x-photo-name', { required: true, max: 255 }), description: string(req.headers['x-photo-description'], 'x-photo-description', { max: 2000 }) || '', media_type: req.headers['content-type'], content: req.body });
+    await db.transaction(async (trx) => {
+      await photoEntity(req.params.entityType, req.params.entityPublicId, trx);
+      await trx('photos').insert({ public_id: publicId, entity_type: req.params.entityType, entity_public_id: req.params.entityPublicId, name: string(req.headers['x-photo-name'], 'x-photo-name', { required: true, max: 255 }), description: string(req.headers['x-photo-description'], 'x-photo-description', { max: 2000 }) || '', media_type: req.headers['content-type'], content: req.body });
+      await audit.record(trx, req.user.id, 'photo.create', req.params.entityType, req.params.entityPublicId, { photoId: publicId });
+    });
     res.status(201).json({ publicId });
   } catch (error) { next(error); }
 });
@@ -225,7 +386,7 @@ router.get('/photos/:publicId/content', async (req, res, next) => {
 });
 
 router.get('/photos/:entityType/:entityPublicId', async (req, res, next) => {
-  try { res.json(await db('photos').where({ entity_type: req.params.entityType, entity_public_id: req.params.entityPublicId }).select('public_id as publicId', 'name', 'description', 'media_type as mediaType', 'created_at as createdAt')); } catch (error) { next(error); }
+  try { await photoEntity(req.params.entityType, req.params.entityPublicId); res.json(await db('photos').where({ entity_type: req.params.entityType, entity_public_id: req.params.entityPublicId }).select('public_id as publicId', 'name', 'description', 'media_type as mediaType', 'created_at as createdAt')); } catch (error) { next(error); }
 });
 
 router.get('/audit', auth.requireAdmin, async (_req, res, next) => {

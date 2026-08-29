@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 
 const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tsm-core-routes-'));
 const ADMIN_TEST_PASSWORD = ['fictional', 'admin', 'password'].join('-');
@@ -23,6 +24,11 @@ let base;
 let adminCookie;
 let site;
 let workPackage;
+let room;
+let rack;
+let termination;
+let device;
+let catalogue;
 
 async function request(url, options = {}, cookie = adminCookie) {
   const headers = { ...(options.body && !(options.body instanceof Buffer) ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) };
@@ -66,17 +72,47 @@ test('setup, authentication, role authorization, and session revocation work', a
   assert.equal(afterLogout.response.status, 401);
 });
 
+test('login failures are throttled without disclosing whether an account exists', async () => {
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const rejected = await request('/api/auth/login', { method: 'POST', body: { username: 'fictional-missing-user', password: VIEWER_TEST_PASSWORD } }, null);
+    assert.equal(rejected.response.status, 401);
+    assert.equal(rejected.data.code, 'invalid_credentials');
+  }
+  const throttled = await request('/api/auth/login', { method: 'POST', body: { username: 'fictional-missing-user', password: VIEWER_TEST_PASSWORD } }, null);
+  assert.equal(throttled.response.status, 429);
+  assert.equal(throttled.data.code, 'login_throttled');
+});
+
 test('generic site, room, rack, termination point, device, distance, and catalogue APIs work', async () => {
   const created = await request('/api/sites', { method: 'POST', body: { code: 'LAB-ROUTE-01', name: 'Fictional Route Lab', description: 'Public test data' } });
   assert.equal(created.response.status, 201); site = created.data;
-  const room = await request(`/api/sites/${site.publicId}/rooms`, { method: 'POST', body: { name: 'Suite A', description: 'Demonstration room' } });
-  const rack = await request(`/api/sites/${site.publicId}/racks`, { method: 'POST', body: { label: 'RACK-A1', suiteLine: 'A', sizeUnits: 42, roomPublicId: room.data.publicId } });
-  const termination = await request(`/api/sites/${site.publicId}/termination-points`, { method: 'POST', body: { label: 'ODF-DEMO-1', kind: 'odf', notes: 'Fictional termination', roomPublicId: room.data.publicId } });
-  const device = await request(`/api/sites/${site.publicId}/devices`, { method: 'POST', body: { hostname: 'DEMO-SWITCH-01', label: 'Demo Switch', deviceKey: 'device-demo-01', rackPublicId: rack.data.publicId, rackUnit: 10, sizeUnits: 1, side: 'front' } });
+  const roomResponse = await request(`/api/sites/${site.publicId}/rooms`, { method: 'POST', body: { name: 'Suite A', description: 'Demonstration room' } });
+  room = roomResponse.data;
+  const rackResponse = await request(`/api/sites/${site.publicId}/racks`, { method: 'POST', body: { label: 'RACK-A1', suiteLine: 'A', sizeUnits: 42, roomPublicId: room.publicId } });
+  rack = rackResponse.data;
+  const terminationResponse = await request(`/api/sites/${site.publicId}/termination-points`, { method: 'POST', body: { label: 'ODF-DEMO-1', kind: 'odf', notes: 'Fictional termination', roomPublicId: room.publicId } });
+  termination = terminationResponse.data;
+  const deviceResponse = await request(`/api/sites/${site.publicId}/devices`, { method: 'POST', body: { hostname: 'DEMO-SWITCH-01', label: 'Demo Switch', deviceKey: 'device-demo-01', rackPublicId: rack.publicId, rackUnit: 10, sizeUnits: 1, side: 'front' } });
+  device = deviceResponse.data;
   const distance = await request(`/api/sites/${site.publicId}/distances`, { method: 'POST', body: { endpointA: 'demo-switch-01:1', endpointB: 'ODF-DEMO-1:1', media: 'fibre', lengthMetres: 18.25 } });
-  assert.equal(rack.response.status, 201); assert.equal(termination.response.status, 201); assert.equal(device.response.status, 201); assert.equal(distance.response.status, 201);
-  const catalogue = await request('/api/catalogue/consumables', { method: 'POST', body: { catalogueReference: 'CAT-DEMO-001', description: 'Fictional hook-and-loop tie', estimatedUnitPrice: 0.42, unit: 'each' } });
-  assert.equal(catalogue.response.status, 201);
+  assert.equal(rackResponse.response.status, 201); assert.equal(terminationResponse.response.status, 201); assert.equal(deviceResponse.response.status, 201); assert.equal(distance.response.status, 201);
+  assert.equal(rack.roomPublicId, room.publicId); assert.equal(device.rackPublicId, rack.publicId);
+  assert.equal('id' in rack, false); assert.equal('public_id' in rack, false);
+  const catalogueResponse = await request('/api/catalogue/consumables', { method: 'POST', body: { catalogueReference: 'CAT-DEMO-001', description: 'Fictional hook-and-loop tie', estimatedUnitPrice: 0.42, unit: 'each' } });
+  assert.equal(catalogueResponse.response.status, 201); catalogue = catalogueResponse.data;
+});
+
+test('generic infrastructure and catalogue updates use optimistic concurrency', async () => {
+  const body = { label: rack.label, suiteLine: 'B', sizeUnits: rack.sizeUnits, roomPublicId: room.publicId, _baseVersion: rack.version };
+  const winner = await request(`/api/sites/${site.publicId}/racks/${rack.publicId}`, { method: 'PUT', body });
+  assert.equal(winner.response.status, 200); assert.equal(winner.data.suiteLine, 'B');
+  const stale = await request(`/api/sites/${site.publicId}/racks/${rack.publicId}`, { method: 'PUT', body });
+  assert.equal(stale.response.status, 409);
+
+  const catalogueBody = { catalogueReference: catalogue.catalogueReference, description: catalogue.description, estimatedUnitPrice: 0.5, unit: catalogue.unit, active: true, _baseVersion: catalogue.version };
+  const catalogueWinner = await request(`/api/catalogue/consumables/${catalogue.publicId}`, { method: 'PUT', body: catalogueBody });
+  assert.equal(catalogueWinner.response.status, 200); assert.equal(Number(catalogueWinner.data.estimatedUnitPrice), 0.5);
+  assert.equal((await request(`/api/catalogue/consumables/${catalogue.publicId}`, { method: 'PUT', body: catalogueBody })).response.status, 409);
 });
 
 test('generic work package persists nested records and is searchable without plugins', async () => {
@@ -92,6 +128,24 @@ test('generic work package persists nested records and is searchable without plu
     const search = await request(`/api/search?q=${encodeURIComponent(term)}`);
     assert.equal(search.response.status, 200, term); assert.equal(search.data[0].publicId, workPackage.publicId, term);
   }
+  for (const term of ['CIRCUIT-DEMO-1', 'SEGMENT-DEMO-1', 'demo-a:1']) {
+    const search = await request(`/api/search?q=${encodeURIComponent(term)}`);
+    assert.equal(search.response.status, 200, term); assert.equal(search.data[0].publicId, workPackage.publicId, term);
+  }
+});
+
+test('zero-plugin all-record search finds generic infrastructure', async () => {
+  for (const [term, entityType, publicId] of [['RACK-A1', 'rack', rack.publicId], ['ODF-DEMO-1', 'termination_point', termination.publicId], ['demo-switch-01', 'device', device.publicId]]) {
+    const search = await request(`/api/search?scope=all&q=${encodeURIComponent(term)}`);
+    const result = search.data.find((entry) => entry.entityType === entityType);
+    assert.equal(result.publicId, publicId, term);
+  }
+});
+
+test('invalid nested package input is rejected atomically', async () => {
+  const rejected = await request('/api/work-packages', { method: 'POST', body: { sitePublicId: site.publicId, packageReference: 'PKG-REJECTED-201', title: 'Rejected package', workItems: {}, circuits: [], consumableRequirements: [] } });
+  assert.equal(rejected.response.status, 422);
+  assert.equal((await request('/api/work-packages')).data.some((entry) => entry.packageReference === 'PKG-REJECTED-201'), false);
 });
 
 test('optimistic concurrency requires a base version and rejects stale writes', async () => {
@@ -119,6 +173,15 @@ test('photo metadata listing does not return image bytes', async () => {
   assert.equal(list.data.length, 1); assert.equal('content' in list.data[0], false);
   const content = await fetch(`${base}/api/photos/${uploaded.data.publicId}/content`, { headers: { Cookie: adminCookie } });
   assert.equal(content.status, 200); assert.deepEqual(Buffer.from(await content.arrayBuffer()), bytes);
+  const orphan = await request(`/api/photos/rack/${crypto.randomUUID()}`, { method: 'POST', body: bytes, headers: { 'Content-Type': 'image/jpeg', 'X-Photo-Name': 'Rejected evidence' } });
+  assert.equal(orphan.response.status, 404);
+});
+
+test('generic mutations create sanitized audit events', async () => {
+  const events = await request('/api/audit');
+  for (const action of ['racks.create', 'racks.update', 'consumable.create', 'consumable.update', 'work_package.create', 'work_package.update', 'photo.create']) {
+    assert.ok(events.data.some((entry) => entry.action === action), action);
+  }
 });
 
 test('static allowlist serves the shell and rejects repository/server paths', async () => {

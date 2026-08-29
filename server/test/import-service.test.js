@@ -67,6 +67,8 @@ test('identical repeated import is idempotent', async () => {
   const proposal = await stage(basePlan);
   const result = await imports.apply(registry, proposal.draftId, actorId, approval(proposal));
   assert.equal(result.status, 'applied');
+  const pack = await db('work_packages').where({ package_ref: 'PKG-DEMO-100' }).first();
+  assert.ok(result.workPackagePublicId); assert.equal(result.workPackagePublicId, pack.public_id);
   assert.equal(await db('work_packages').where({ package_ref: 'PKG-DEMO-100' }).count({ count: '*' }).first().then((row) => Number(row.count)), 1);
   const run = await db('import_runs').where({ public_id: result.runId }).first();
   assert.ok(run.attempt_count >= 2);

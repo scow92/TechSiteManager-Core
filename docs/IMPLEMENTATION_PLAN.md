@@ -25,8 +25,11 @@ or private repository details.
   optimistic concurrency, authentication, role checks, and backup/restore.
 - [ ] Complete mutation validation, audit, entity existence checks, and
   optimistic-concurrency coverage across the generic routes.
-- [ ] Extend zero-plugin search and browser navigation across generic records.
-- [ ] Add login throttling and remaining authorization regression coverage.
+- [x] Extend zero-plugin search across generic infrastructure and package child
+  records.
+- [x] Add login throttling without account-existence disclosure.
+- [ ] Complete browser navigation and remaining authorization regression
+  coverage.
 
 ## Plugin and import contract
 
