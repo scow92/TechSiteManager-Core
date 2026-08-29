@@ -126,17 +126,20 @@ candidate and passed when temporary writable caches were configured.
 - Human copyright/IP review is not recorded.
 - Human third-party licensing review is not recorded.
 - Human disclosure review is not recorded.
-- Publication approval, merge approval, and approval to change repository
-  visibility are not recorded.
+- Publication approval and approval to change repository visibility are not
+  recorded. Private pull-request merge and private candidate rename approval
+  are recorded in `docs/PUBLICATION_APPROVAL_CHECKLIST.md`.
 - If organization policy requires any unavailable scanner, its external result
   remains a blocker.
 
-The owner has confirmed ownership of the candidate's original code and has
-selected `Apache-2.0` as its outbound licence. Those two decisions are recorded
-in `docs/PUBLICATION_APPROVAL_CHECKLIST.md`; they do not constitute any other
-approval. Both repositories remained private throughout this review, and the
-original private repository was not modified.
+Sam Cowie has confirmed ownership of the candidate's original code, selected
+`Apache-2.0` as its outbound licence, and approved the private pull-request
+merge and private candidate rename. Those decisions are recorded in
+`docs/PUBLICATION_APPROVAL_CHECKLIST.md`; they do not constitute technical,
+security, disclosure, final publication, or public-visibility approval. Both
+repositories remained private throughout this review, and the original private
+repository was not modified.
 
-Do not merge the pull request, change repository visibility, publish packages
-or images, create a release, rename a repository, or reuse the original
-repository name without explicit later approval.
+Do not change repository visibility, publish packages or images, create a
+release, rename the original private repository, or reuse its name without
+explicit later approval.
