@@ -11,9 +11,10 @@ or private repository details.
 - [x] Define and enforce the candidate source allowlist.
 - [x] Use one generic fresh-install migration rather than historical
   migrations.
-- [ ] Complete tracked-file, package, secret, binary, dependency, licence, and
+- [x] Complete tracked-file, package, secret, binary, dependency, licence, and
   container-layer review.
-- [ ] Verify the final branch from a fresh private clone.
+- [x] Verify the implementation branch from a fresh private clone; repeat on
+  the final documentation commit before handoff.
 
 ## Generic core
 
@@ -56,15 +57,15 @@ or private repository details.
   pending-logout recovery.
 - [x] Provide SQLite-safe online backup, verified restore, and integrity tests.
 - [x] Provide a zero-plugin, non-root, read-only-container deployment.
-- [ ] Complete container smoke, layer, and filesystem inspection.
+- [x] Complete container smoke, layer, and filesystem inspection.
 
 ## Acceptance
 
 - [x] Baseline lint, syntax, unit/integration, browser, disclosure, dependency
   audit, and zero-plugin/fictional-plugin paths pass.
-- [ ] Add focused tests for every item completed above.
-- [ ] Run the complete acceptance matrix and record passed, failed, and skipped
+- [x] Add focused tests for every item completed above.
+- [x] Run the complete acceptance matrix and record passed, failed, and skipped
   checks in `docs/RELEASE_READINESS.md`.
-- [ ] Push reviewable checkpoints to the private candidate branch.
+- [x] Push reviewable checkpoints to the private candidate branch.
 - [ ] Stop before publication until an outbound licence and explicit human
   publication approval exist.
