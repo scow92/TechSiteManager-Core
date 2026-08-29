@@ -28,7 +28,12 @@
     "server/lib/validation.js",
     "server/lib/work-packages.js",
     "server/plugins/export-service.js",
+    "server/plugins/contracts.js",
+    "server/plugins/contribution-validator.js",
     "server/plugins/loader.js",
-    "server/plugins/profiles.js"
+    "server/plugins/manifest-validator.js",
+    "server/plugins/package-resolver.js",
+    "server/plugins/profiles.js",
+    "server/plugins/registry.js"
   ]
 }
