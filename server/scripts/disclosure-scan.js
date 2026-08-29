@@ -8,7 +8,7 @@ const ignored = new Set(['node_modules', '.git', 'data', 'sbom.cdx.json']);
 const findings = [];
 const allowedRootFiles = new Set([
   '.dockerignore', '.gitignore', '.nvmrc', 'AGENTS.md', 'CONTRIBUTING.md',
-  'COPYRIGHT.md', 'Dockerfile', 'README.md', 'SECURITY.md',
+  'COPYRIGHT.md', 'Dockerfile', 'LICENSE', 'README.md', 'SECURITY.md',
   'docker-compose.yml', 'eslint.config.js', 'package-lock.json', 'package.json'
 ]);
 const allowedRootDirectories = new Set(['.github', 'config', 'docs', 'examples', 'public', 'server']);
@@ -50,7 +50,7 @@ function walk(directory) {
       }
       const text = bytes.toString('utf8');
       for (const [category, pattern] of patterns) {
-        if (category === 'non-reserved-domain' && name === 'package-lock.json') continue;
+        if (category === 'non-reserved-domain' && (name === 'package-lock.json' || name === 'LICENSE' || name.endsWith('/LICENSE'))) continue;
         if (pattern.test(text)) findings.push({ category, path: name });
       }
     }

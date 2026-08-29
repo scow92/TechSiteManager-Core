@@ -6,7 +6,7 @@ const path = require('path');
 const root = path.join(__dirname, '..', '..');
 const allowedRootFiles = new Set([
   '.dockerignore', '.gitignore', '.nvmrc', 'AGENTS.md', 'CONTRIBUTING.md',
-  'COPYRIGHT.md', 'Dockerfile', 'README.md', 'SECURITY.md',
+  'COPYRIGHT.md', 'Dockerfile', 'LICENSE', 'README.md', 'SECURITY.md',
   'docker-compose.yml', 'eslint.config.js', 'package-lock.json', 'package.json'
 ]);
 const allowedRootDirectories = new Set(['.github', 'config', 'docs', 'examples', 'public', 'server']);
@@ -33,7 +33,7 @@ for (const commit of commits) {
     if (bytes.includes(0)) { findings.push({ category: 'binary-file', commit, path: file }); continue; }
     const text = bytes.toString('utf8');
     for (const [category, pattern] of patterns) {
-      if (category === 'non-reserved-domain' && file === 'package-lock.json') continue;
+      if (category === 'non-reserved-domain' && (file === 'package-lock.json' || file === 'LICENSE' || file.endsWith('/LICENSE'))) continue;
       if (pattern.test(text)) findings.push({ category, commit, path: file });
     }
   }

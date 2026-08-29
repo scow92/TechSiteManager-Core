@@ -67,5 +67,6 @@ or private repository details.
 - [x] Run the complete acceptance matrix and record passed, failed, and skipped
   checks in `docs/RELEASE_READINESS.md`.
 - [x] Push reviewable checkpoints to the private candidate branch.
-- [ ] Stop before publication until an outbound licence and explicit human
-  publication approval exist.
+- [x] Record the owner-selected `Apache-2.0` outbound licence.
+- [ ] Stop before publication until explicit human publication approval
+  exists.

@@ -29,4 +29,6 @@ filesystem, network, process, or database modules. Review and pin plugins like
 core code and enforce real egress boundaries outside the process.
 
 The fictional package under `examples/fictional-plugin/` demonstrates the
-contract without representing a real source system.
+contract without representing a real source system. It is original project
+example code licensed under `Apache-2.0`; dependencies loaded by a real plugin
+retain their own licences and attribution requirements.

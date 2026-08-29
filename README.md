@@ -13,8 +13,7 @@ backup/restore are core capabilities.
 ## Status
 
 This repository is a private public-release candidate. It must not be made
-public until the owner completes the disclosure review and chooses an outbound
-license. No license has been granted yet.
+public until the remaining review and publication approvals are complete.
 
 ## Run locally
 
@@ -75,3 +74,10 @@ through core-owned authenticated routes.
 See [docs/PLUGINS.md](docs/PLUGINS.md),
 [docs/IMPORT_PROVIDER_API.md](docs/IMPORT_PROVIDER_API.md), and
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## Licence
+
+Original TechSiteManager code is licensed under the Apache License, Version
+2.0 (`Apache-2.0`). See [LICENSE](LICENSE) and [COPYRIGHT.md](COPYRIGHT.md).
+Third-party components remain under their respective licences; see
+[docs/THIRD_PARTY_LICENSES.md](docs/THIRD_PARTY_LICENSES.md).

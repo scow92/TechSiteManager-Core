@@ -26,7 +26,7 @@ const result = {
   status: failures.length ? 'failed' : 'passed',
   dependencies: dependencies.length,
   licenses: [...new Set(dependencies.filter((entry) => !entry.internalExample).map((entry) => entry.license))].sort(),
-  internalUnpublishedExamples: dependencies.filter((entry) => entry.internalExample).map((entry) => `${entry.name}@${entry.version}`),
+  projectExamples: dependencies.filter((entry) => entry.internalExample).map((entry) => `${entry.name}@${entry.version}`),
   failures
 };
 console.log(JSON.stringify(result, null, 2));

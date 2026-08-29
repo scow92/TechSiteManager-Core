@@ -28,8 +28,10 @@ The 2026-08-29 acceptance run passed:
   in-container SQLite integrity and foreign-key checks.
 
 The dependency licences observed were Apache-2.0, BSD-2-Clause,
-BSD-3-Clause, BlueOak-1.0.0, ISC, and MIT. The `UNLICENSED` fictional example
-is part of this unpublished candidate, not a third-party runtime dependency.
+BSD-3-Clause, BlueOak-1.0.0, ISC, and MIT. The fictional example is original
+project code licensed under `Apache-2.0`, not a third-party dependency. See
+`docs/THIRD_PARTY_LICENSES.md` for the public-safe inventory and `COPYRIGHT.md`
+for the ownership statement.
 
 ## Failed
 
@@ -50,10 +52,14 @@ placed under `/tmp`.
 
 ## Publication blockers
 
-- the repository owner has not selected an outbound license;
 - human technical, security, intellectual-property, and disclosure approval is
   still required;
 - repository naming and public visibility require an explicit later approval.
+
+The owner has confirmed ownership of the candidate's original code and
+selected `Apache-2.0` as its outbound licence. Those two decisions are
+recorded; they do not constitute the remaining human approvals or authorize
+publication.
 
 Do not make this repository public, publish packages/images, create a release,
 or reuse an existing repository name until every blocker is resolved.

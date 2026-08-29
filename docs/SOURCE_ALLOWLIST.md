@@ -8,7 +8,7 @@ binary review.
 ## Allowed paths
 
 - root project metadata: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`,
-  `SECURITY.md`, `COPYRIGHT.md`, `package.json`, `package-lock.json`,
+  `SECURITY.md`, `COPYRIGHT.md`, `LICENSE`, `package.json`, `package-lock.json`,
   `.nvmrc`, `.gitignore`, and `.dockerignore`;
 - public automation: `.github/dependabot.yml`,
   `.github/pull_request_template.md`, and `.github/workflows/ci.yml`;
