@@ -1,12 +1,12 @@
 'use strict';
 
-const CACHE = 'techsitemanager-shell-v10';
+const CACHE = 'techsitemanager-shell-v11';
 const SHELL = [
   '/', '/index.html', '/css/styles.css', '/manifest.json',
   '/js/idb.js', '/js/offline.js', '/js/api.js', '/js/auth.js', '/js/dom.js', '/js/main.js', '/js/offline-ui.js',
   '/js/presentation.js',
   '/js/import/descriptors.js', '/js/import/reconciliation.js',
-  '/js/views/home.js', '/js/views/import.js', '/js/views/settings.js', '/js/views/sites.js', '/js/views/work-package.js'
+  '/js/views/home.js', '/js/views/import.js', '/js/views/infrastructure.js', '/js/views/settings.js', '/js/views/sites.js', '/js/views/work-package.js'
 ];
 self.addEventListener('install', (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL))));
 self.addEventListener('activate', (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)))).then(() => self.clients.claim())));

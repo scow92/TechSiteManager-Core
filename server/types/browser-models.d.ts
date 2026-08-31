@@ -10,6 +10,7 @@ export interface WorkPackageSummary { readonly publicId: string; readonly packag
 export interface SearchRecord extends Partial<WorkPackageSummary> { readonly entityType?: 'work_package' | 'site' | 'room' | 'rack' | 'termination_point' | 'device' | 'distance'; readonly reference?: string; readonly description?: string; }
 export interface SiteRecord {
   readonly publicId: string;
+  readonly version: number;
   readonly name?: string;
   readonly description?: string;
   readonly label?: string;
@@ -19,10 +20,25 @@ export interface SiteRecord {
   readonly roomPublicId?: string | null;
   readonly rackPublicId?: string | null;
   readonly suiteLine?: string;
+  readonly suiteLineConfirmed?: boolean;
   readonly sizeUnits?: number;
   readonly rackUnit?: number | null;
   readonly side?: string;
+  readonly deviceKey?: string;
+  readonly kind?: string;
+  readonly notes?: string;
+  readonly trayCount?: number;
+  readonly positionsPerTray?: number;
+  readonly endpointADevicePublicId?: string | null;
+  readonly endpointBDevicePublicId?: string | null;
+  readonly endpointARackPublicId?: string | null;
+  readonly endpointBRackPublicId?: string | null;
+  readonly media?: string;
+  readonly lengthMetres?: number;
+  readonly observedAt?: string;
 }
+export interface TerminationPosition { readonly publicId: string; readonly tray: number; readonly position: number; readonly label: string; readonly version: number; }
+export interface PhotoRecord { readonly publicId: string; readonly name: string; readonly description: string; readonly mediaType: string; readonly current: boolean; readonly version: number; readonly createdAt: string; }
 export type ExtensionValues = Readonly<Record<string, { readonly value: unknown; readonly version: number }>>;
 export interface WorkItem { readonly publicId: string; readonly itemReference: string; readonly title: string; readonly description: string; readonly status: string; readonly sequence: number; readonly version: number; readonly extensions: ExtensionValues; }
 export interface Segment { readonly publicId: string; readonly segmentReference: string; readonly sequence: number; readonly fromEndpoint: string; readonly toEndpoint: string; readonly lengthMetres: number | null; readonly notes: string; readonly version: number; readonly extensions: ExtensionValues; }

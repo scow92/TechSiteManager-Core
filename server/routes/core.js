@@ -36,10 +36,10 @@ function assignees(value, path = 'assignees') {
 function publicInfrastructure(kind, row) {
   const common = { publicId: row.public_id, version: row.version };
   if (kind === 'rooms') return { ...common, name: row.name, description: row.description };
-  if (kind === 'racks') return { ...common, label: row.label, suiteLine: row.suite_line, sizeUnits: row.size_units, roomPublicId: row.room_public_id || null };
-  if (kind === 'termination-points') return { ...common, label: row.label, kind: row.kind, notes: row.notes, roomPublicId: row.room_public_id || null };
-  if (kind === 'devices') return { ...common, hostname: row.hostname, label: row.label, deviceKey: row.device_key, rackPublicId: row.rack_public_id || null, rackUnit: row.rack_unit, sizeUnits: row.size_units, side: row.side };
-  return { publicId: row.public_id, endpointA: row.endpoint_a, endpointB: row.endpoint_b, media: row.media, lengthMetres: row.length_metres, observedAt: row.observed_at };
+  if (kind === 'racks') return { ...common, label: row.label, suiteLine: row.suite_line, suiteLineConfirmed: Boolean(row.suite_line_confirmed), sizeUnits: row.size_units, roomPublicId: row.room_public_id || null };
+  if (kind === 'termination-points') return { ...common, label: row.label, kind: row.kind, notes: row.notes, trayCount: row.tray_count, positionsPerTray: row.positions_per_tray, roomPublicId: row.room_public_id || null };
+  if (kind === 'devices') return { ...common, hostname: row.hostname, label: row.label, deviceKey: row.device_key, roomPublicId: row.room_public_id || null, rackPublicId: row.rack_public_id || null, rackUnit: row.rack_unit, sizeUnits: row.size_units, side: row.side };
+  return { publicId: row.public_id, endpointA: row.endpoint_a, endpointB: row.endpoint_b, endpointADevicePublicId: row.endpoint_a_device_public_id || null, endpointBDevicePublicId: row.endpoint_b_device_public_id || null, endpointARackPublicId: row.endpoint_a_rack_public_id || null, endpointBRackPublicId: row.endpoint_b_rack_public_id || null, media: row.media, lengthMetres: row.length_metres, observedAt: row.observed_at };
 }
 
 async function withInfrastructureRelation(kind, row, trx = db) {
@@ -49,7 +49,19 @@ async function withInfrastructureRelation(kind, row, trx = db) {
   }
   if (kind === 'devices' && row.rack_id) {
     const related = await trx('racks').where({ id: row.rack_id }).select('public_id').first();
-    return { ...row, rack_public_id: related && related.public_id };
+    const room = row.room_id ? await trx('rooms').where({ id: row.room_id }).select('public_id').first() : null;
+    return { ...row, rack_public_id: related && related.public_id, room_public_id: room && room.public_id };
+  }
+  if (kind === 'devices' && row.room_id) {
+    const room = await trx('rooms').where({ id: row.room_id }).select('public_id').first();
+    return { ...row, room_public_id: room && room.public_id };
+  }
+  if (kind === 'distances') {
+    const ids = {};
+    for (const [column, table, output] of [['endpoint_a_device_id', 'devices', 'endpoint_a_device_public_id'], ['endpoint_b_device_id', 'devices', 'endpoint_b_device_public_id'], ['endpoint_a_rack_id', 'racks', 'endpoint_a_rack_public_id'], ['endpoint_b_rack_id', 'racks', 'endpoint_b_rack_public_id']]) {
+      if (row[column]) ids[output] = (await trx(table).where({ id: row[column] }).select('public_id').first())?.public_id;
+    }
+    return { ...row, ...ids };
   }
   return row;
 }
@@ -98,10 +110,10 @@ router.put('/sites/:publicId', auth.requireWrite, async (req, res, next) => {
 function infrastructureSpec(kind) {
   return {
     rooms: { table: 'rooms', fields: ['name', 'description'] },
-    racks: { table: 'racks', fields: ['label', 'suiteLine', 'sizeUnits', 'roomPublicId'] },
-    'termination-points': { table: 'termination_points', fields: ['label', 'kind', 'notes', 'roomPublicId'] },
-    devices: { table: 'devices', fields: ['hostname', 'label', 'deviceKey', 'rackPublicId', 'rackUnit', 'sizeUnits', 'side'] },
-    distances: { table: 'distance_samples', fields: ['endpointA', 'endpointB', 'media', 'lengthMetres'], appendOnly: true }
+    racks: { table: 'racks', fields: ['label', 'suiteLine', 'suiteLineConfirmed', 'sizeUnits', 'roomPublicId'] },
+    'termination-points': { table: 'termination_points', fields: ['label', 'kind', 'notes', 'trayCount', 'positionsPerTray', 'roomPublicId'] },
+    devices: { table: 'devices', fields: ['hostname', 'label', 'deviceKey', 'roomPublicId', 'rackPublicId', 'rackUnit', 'sizeUnits', 'side'] },
+    distances: { table: 'distance_samples', fields: ['endpointA', 'endpointB', 'endpointADevicePublicId', 'endpointBDevicePublicId', 'media', 'lengthMetres'], appendOnly: true }
   }[kind];
 }
 
@@ -112,7 +124,26 @@ async function relatedId(trx, table, publicId, siteId, field) {
   return row.id;
 }
 
-async function infrastructureValues(kind, body, site, trx) {
+async function deviceByPublicId(trx, publicId, siteId, field) {
+  if (!publicId) return null;
+  const device = await trx('devices').where({ public_id: uuid(publicId, field), site_id: siteId }).first();
+  if (!device) throw httpError(422, 'device_site_mismatch', 'Device does not belong to the site');
+  return device;
+}
+
+async function validateDevicePlacement(trx, site, values, excludePublicId) {
+  if (!values.rack_id) return;
+  const rack = await trx('racks').where({ id: values.rack_id, site_id: site.id }).first();
+  if (!rack) throw httpError(422, 'rack_site_mismatch', 'Rack does not belong to the site');
+  values.room_id = rack.room_id;
+  if (!values.rack_unit) throw httpError(422, 'rack_unit_required', 'rackUnit is required when a rack is selected');
+  if (values.rack_unit + values.size_units - 1 > rack.size_units) throw httpError(422, 'device_outside_rack', 'Device placement exceeds the rack height');
+  const positioned = await trx('devices').where({ rack_id: rack.id, side: values.side }).whereNotNull('rack_unit');
+  const start = values.rack_unit; const end = start + values.size_units - 1;
+  if (positioned.some((device) => device.public_id !== excludePublicId && start <= device.rack_unit + device.size_units - 1 && end >= device.rack_unit)) throw httpError(409, 'rack_position_conflict', 'The selected rack units are already occupied');
+}
+
+async function infrastructureValues(kind, body, site, trx, existing = null) {
   if (kind === 'rooms') return {
     name: string(body.name, 'name', { required: true, max: 255 }),
     description: string(body.description, 'description', { max: 20_000 }) || ''
@@ -120,27 +151,45 @@ async function infrastructureValues(kind, body, site, trx) {
   if (kind === 'racks') return {
     label: string(body.label, 'label', { required: true, max: 120 }),
     suite_line: string(body.suiteLine, 'suiteLine', { max: 64 }) || '',
+    suite_line_confirmed: body.suiteLineConfirmed === undefined ? Boolean(body.suiteLine) : body.suiteLineConfirmed === true,
     size_units: integer(body.sizeUnits === undefined ? 47 : body.sizeUnits, 'sizeUnits', { required: true, min: 1, max: 100 }),
-    room_id: await relatedId(trx, 'rooms', body.roomPublicId, site.id, 'roomPublicId')
+    room_id: await relatedId(trx, 'rooms', uuid(body.roomPublicId, 'roomPublicId'), site.id, 'roomPublicId')
   };
   if (kind === 'termination-points') return {
     label: string(body.label, 'label', { required: true, max: 120 }),
     kind: string(body.kind, 'kind', { required: true, max: 64 }),
     notes: string(body.notes, 'notes', { max: 20_000 }) || '',
+    tray_count: integer(body.trayCount === undefined ? 1 : body.trayCount, 'trayCount', { required: true, min: 1, max: 100 }),
+    positions_per_tray: integer(body.positionsPerTray === undefined ? 12 : body.positionsPerTray, 'positionsPerTray', { required: true, min: 1, max: 1000 }),
     room_id: await relatedId(trx, 'rooms', body.roomPublicId, site.id, 'roomPublicId')
   };
-  if (kind === 'devices') return {
-    hostname: string(body.hostname, 'hostname', { required: true, max: 255 }).toLowerCase(),
-    label: string(body.label, 'label', { max: 255 }) || '',
-    device_key: string(body.deviceKey, 'deviceKey', { required: true, max: 128 }),
-    rack_id: await relatedId(trx, 'racks', body.rackPublicId, site.id, 'rackPublicId'),
-    rack_unit: integer(body.rackUnit, 'rackUnit', { min: 1, max: 100 }),
-    size_units: integer(body.sizeUnits === undefined ? 1 : body.sizeUnits, 'sizeUnits', { required: true, min: 1, max: 100 }),
-    side: enumeration(body.side || 'front', 'side', ['front', 'rear'], true)
-  };
+  if (kind === 'devices') {
+    const rackId = await relatedId(trx, 'racks', body.rackPublicId, site.id, 'rackPublicId');
+    const roomId = await relatedId(trx, 'rooms', body.roomPublicId, site.id, 'roomPublicId');
+    const values = {
+      hostname: string(body.hostname, 'hostname', { required: true, max: 255 }).toLowerCase(),
+      label: string(body.label, 'label', { max: 255 }) || '',
+      device_key: existing ? existing.device_key : string(body.deviceKey, 'deviceKey', { max: 128 }) || id(),
+      room_id: roomId,
+      rack_id: rackId,
+      rack_unit: integer(body.rackUnit, 'rackUnit', { min: 1, max: 100 }),
+      size_units: integer(body.sizeUnits === undefined ? 1 : body.sizeUnits, 'sizeUnits', { required: true, min: 1, max: 100 }),
+      side: enumeration(body.side || 'front', 'side', ['front', 'rear'], true)
+    };
+    if (existing && body.deviceKey && body.deviceKey !== existing.device_key) throw httpError(422, 'device_key_immutable', 'deviceKey cannot be changed');
+    await validateDevicePlacement(trx, site, values, existing?.public_id);
+    return values;
+  }
+  const endpointADevice = await deviceByPublicId(trx, body.endpointADevicePublicId, site.id, 'endpointADevicePublicId');
+  const endpointBDevice = await deviceByPublicId(trx, body.endpointBDevicePublicId, site.id, 'endpointBDevicePublicId');
+  if (endpointADevice && endpointBDevice && endpointADevice.id === endpointBDevice.id) throw httpError(422, 'distance_endpoints_equal', 'Distance endpoints must be different devices');
   return {
-    endpoint_a: string(body.endpointA, 'endpointA', { required: true, max: 255 }),
-    endpoint_b: string(body.endpointB, 'endpointB', { required: true, max: 255 }),
+    endpoint_a: endpointADevice?.hostname || string(body.endpointA, 'endpointA', { required: true, max: 255 }),
+    endpoint_b: endpointBDevice?.hostname || string(body.endpointB, 'endpointB', { required: true, max: 255 }),
+    endpoint_a_device_id: endpointADevice?.id || null,
+    endpoint_b_device_id: endpointBDevice?.id || null,
+    endpoint_a_rack_id: endpointADevice?.rack_id || null,
+    endpoint_b_rack_id: endpointBDevice?.rack_id || null,
     media: string(body.media, 'media', { required: true, max: 64 }),
     length_metres: number(body.lengthMetres, 'lengthMetres', { required: true, min: Number.EPSILON, max: 1_000_000 })
   };
@@ -163,7 +212,12 @@ router.post('/sites/:sitePublicId/:kind', auth.requireWrite, async (req, res, ne
     knownKeys(req.body, spec.fields);
     const created = await db.transaction(async (trx) => {
       const site = await siteByPublicId(req.params.sitePublicId, trx);
-      const record = { public_id: id(), site_id: site.id, ...(await infrastructureValues(req.params.kind, req.body, site, trx)) };
+      const values = await infrastructureValues(req.params.kind, req.body, site, trx);
+      if (req.params.kind === 'racks') {
+        const duplicate = await trx('racks').where({ site_id: site.id, room_id: values.room_id }).whereRaw('lower(label) = lower(?)', [values.label]).first();
+        if (duplicate) throw httpError(409, 'duplicate_rack', 'A rack with this label already exists in the selected room');
+      }
+      const record = { public_id: id(), site_id: site.id, ...values };
       const [rowId] = await trx(spec.table).insert(record);
       await audit.record(trx, req.user.id, `${req.params.kind}.create`, req.params.kind, record.public_id);
       return withInfrastructureRelation(req.params.kind, await trx(spec.table).where({ id: rowId }).first(), trx);
@@ -180,17 +234,147 @@ router.put('/sites/:sitePublicId/:kind/:publicId', auth.requireWrite, async (req
     const requestedVersion = baseVersion(req.body);
     const updated = await db.transaction(async (trx) => {
       const site = await siteByPublicId(req.params.sitePublicId, trx);
-      const changes = { ...(await infrastructureValues(req.params.kind, req.body, site, trx)), version: requestedVersion + 1 };
+      const current = await trx(spec.table).where({ public_id: req.params.publicId, site_id: site.id }).first();
+      if (!current) throw httpError(404, 'infrastructure_not_found', 'Record not found');
+      const values = await infrastructureValues(req.params.kind, req.body, site, trx, current);
+      if (req.params.kind === 'termination-points') {
+        const outsideCapacity = await trx('termination_positions').where({ termination_point_id: current.id }).where((builder) => builder.where('tray', '>', values.tray_count).orWhere('position', '>', values.positions_per_tray)).first();
+        if (outsideCapacity) throw httpError(409, 'termination_capacity_in_use', 'Move or remove positions outside the requested tray capacity first');
+      }
+      if (req.params.kind === 'racks') {
+        const duplicate = await trx('racks').where({ site_id: site.id, room_id: values.room_id }).whereNot({ public_id: req.params.publicId }).whereRaw('lower(label) = lower(?)', [values.label]).first();
+        if (duplicate) throw httpError(409, 'duplicate_rack', 'A rack with this label already exists in the selected room');
+      }
+      const changes = { ...values, version: requestedVersion + 1 };
       const count = await trx(spec.table).where({ public_id: req.params.publicId, site_id: site.id, version: requestedVersion }).update(changes);
       if (!count) {
-        const current = await trx(spec.table).where({ public_id: req.params.publicId, site_id: site.id }).first();
-        if (!current) throw httpError(404, 'infrastructure_not_found', 'Record not found');
-        throw httpError(409, 'version_conflict', 'The record changed since it was loaded');
+        const latest = await trx(spec.table).where({ public_id: req.params.publicId, site_id: site.id }).first();
+        if (latest.version === requestedVersion + 1 && Object.entries(values).every(([key, value]) => latest[key] === value)) return withInfrastructureRelation(req.params.kind, latest, trx);
+        const conflict = httpError(409, 'version_conflict', 'The record changed since it was loaded');
+        conflict.serverVersion = latest.version;
+        throw conflict;
       }
       await audit.record(trx, req.user.id, `${req.params.kind}.update`, req.params.kind, req.params.publicId);
       return withInfrastructureRelation(req.params.kind, await trx(spec.table).where({ public_id: req.params.publicId }).first(), trx);
     });
     res.json(publicInfrastructure(req.params.kind, updated));
+  } catch (error) { next(error); }
+});
+
+router.delete('/sites/:sitePublicId/:kind/:publicId', auth.requireWrite, async (req, res, next) => {
+  try {
+    const spec = infrastructureSpec(req.params.kind);
+    if (!spec || spec.appendOnly || !['rooms', 'racks', 'termination-points', 'devices'].includes(req.params.kind)) throw httpError(404, 'route_not_found', 'Route not found');
+    const requestedVersion = integer(Number(req.query.baseVersion), 'baseVersion', { required: true, min: 0 });
+    await db.transaction(async (trx) => {
+      const site = await siteByPublicId(req.params.sitePublicId, trx);
+      const current = await trx(spec.table).where({ public_id: req.params.publicId, site_id: site.id }).first();
+      if (!current) throw httpError(404, 'infrastructure_not_found', 'Record not found');
+      if (current.version !== requestedVersion) {
+        const conflict = httpError(409, 'version_conflict', 'The record changed since it was loaded'); conflict.serverVersion = current.version; throw conflict;
+      }
+      if (req.params.kind === 'rooms') {
+        const owned = Number((await trx('racks').where({ room_id: current.id }).count({ count: '*' }).first()).count) + Number((await trx('termination_points').where({ room_id: current.id }).count({ count: '*' }).first()).count);
+        if (owned) throw httpError(409, 'room_not_empty', 'Move or remove the room infrastructure before deleting the room');
+      }
+      if (req.params.kind === 'racks' && await trx('devices').where({ rack_id: current.id }).first()) throw httpError(409, 'rack_not_empty', 'Remove or move rack devices before deleting the rack');
+      await trx('photos').where({ entity_type: req.params.kind === 'racks' ? 'rack' : req.params.kind === 'devices' ? 'device' : '', entity_public_id: req.params.publicId }).delete();
+      await trx(spec.table).where({ id: current.id }).delete();
+      await audit.record(trx, req.user.id, `${req.params.kind}.delete`, req.params.kind, req.params.publicId);
+    });
+    res.status(204).end();
+  } catch (error) { next(error); }
+});
+
+router.get('/sites/:sitePublicId/termination-points/:publicId/positions', async (req, res, next) => {
+  try {
+    const site = await siteByPublicId(req.params.sitePublicId);
+    const point = await db('termination_points').where({ public_id: req.params.publicId, site_id: site.id }).first();
+    if (!point) throw httpError(404, 'termination_point_not_found', 'Termination point not found');
+    res.json(await db('termination_positions').where({ termination_point_id: point.id }).select('public_id as publicId', 'tray', 'position', 'label', 'version').orderBy(['tray', 'position']));
+  } catch (error) { next(error); }
+});
+
+router.post('/sites/:sitePublicId/termination-points/:publicId/positions', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['tray', 'position', 'label']);
+    const created = await db.transaction(async (trx) => {
+      const site = await siteByPublicId(req.params.sitePublicId, trx);
+      const point = await trx('termination_points').where({ public_id: req.params.publicId, site_id: site.id }).first();
+      if (!point) throw httpError(404, 'termination_point_not_found', 'Termination point not found');
+      const tray = integer(req.body.tray, 'tray', { required: true, min: 1, max: point.tray_count });
+      const position = integer(req.body.position, 'position', { required: true, min: 1, max: point.positions_per_tray });
+      if (await trx('termination_positions').where({ termination_point_id: point.id, tray, position }).first()) throw httpError(409, 'termination_position_duplicate', 'That tray and position is already recorded');
+      const record = { public_id: id(), termination_point_id: point.id, tray, position, label: string(req.body.label, 'label', { max: 120 }) || '' };
+      const [rowId] = await trx('termination_positions').insert(record);
+      await audit.record(trx, req.user.id, 'termination_position.create', 'termination_point', req.params.publicId, { positionId: record.public_id });
+      return trx('termination_positions').where({ id: rowId }).first();
+    });
+    res.status(201).json({ publicId: created.public_id, tray: created.tray, position: created.position, label: created.label, version: created.version });
+  } catch (error) { next(error); }
+});
+
+router.put('/sites/:sitePublicId/termination-points/:pointPublicId/positions/:publicId', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['tray', 'position', 'label', '_baseVersion']);
+    const requestedVersion = baseVersion(req.body);
+    const updated = await db.transaction(async (trx) => {
+      const site = await siteByPublicId(req.params.sitePublicId, trx);
+      const point = await trx('termination_points').where({ public_id: req.params.pointPublicId, site_id: site.id }).first();
+      if (!point) throw httpError(404, 'termination_point_not_found', 'Termination point not found');
+      const current = await trx('termination_positions').where({ public_id: req.params.publicId, termination_point_id: point.id }).first();
+      if (!current) throw httpError(404, 'termination_position_not_found', 'Termination position not found');
+      const values = {
+        tray: integer(req.body.tray, 'tray', { required: true, min: 1, max: point.tray_count }),
+        position: integer(req.body.position, 'position', { required: true, min: 1, max: point.positions_per_tray }),
+        label: string(req.body.label, 'label', { max: 120 }) || ''
+      };
+      const duplicate = await trx('termination_positions').where({ termination_point_id: point.id, tray: values.tray, position: values.position }).whereNot({ id: current.id }).first();
+      if (duplicate) throw httpError(409, 'termination_position_duplicate', 'That tray and position is already recorded');
+      const count = await trx('termination_positions').where({ id: current.id, version: requestedVersion }).update({ ...values, version: requestedVersion + 1 });
+      if (!count) {
+        const conflict = httpError(409, 'version_conflict', 'The termination position changed since it was loaded');
+        conflict.serverVersion = current.version;
+        throw conflict;
+      }
+      await audit.record(trx, req.user.id, 'termination_position.update', 'termination_point', req.params.pointPublicId, { positionId: req.params.publicId });
+      return trx('termination_positions').where({ id: current.id }).first();
+    });
+    res.json({ publicId: updated.public_id, tray: updated.tray, position: updated.position, label: updated.label, version: updated.version });
+  } catch (error) { next(error); }
+});
+
+router.delete('/sites/:sitePublicId/termination-points/:pointPublicId/positions/:publicId', auth.requireWrite, async (req, res, next) => {
+  try {
+    const requestedVersion = integer(Number(req.query.baseVersion), 'baseVersion', { required: true, min: 0 });
+    await db.transaction(async (trx) => {
+      const site = await siteByPublicId(req.params.sitePublicId, trx);
+      const point = await trx('termination_points').where({ public_id: req.params.pointPublicId, site_id: site.id }).first();
+      if (!point) throw httpError(404, 'termination_point_not_found', 'Termination point not found');
+      const count = await trx('termination_positions').where({ public_id: req.params.publicId, termination_point_id: point.id, version: requestedVersion }).delete();
+      if (!count) throw httpError(409, 'version_conflict', 'The termination position changed since it was loaded');
+      await audit.record(trx, req.user.id, 'termination_position.delete', 'termination_point', req.params.pointPublicId, { positionId: req.params.publicId });
+    });
+    res.status(204).end();
+  } catch (error) { next(error); }
+});
+
+router.get('/sites/:sitePublicId/distances/suggestions', async (req, res, next) => {
+  try {
+    const site = await siteByPublicId(req.params.sitePublicId);
+    const deviceA = await deviceByPublicId(db, req.query.endpointADevicePublicId, site.id, 'endpointADevicePublicId');
+    const deviceB = await deviceByPublicId(db, req.query.endpointBDevicePublicId, site.id, 'endpointBDevicePublicId');
+    if (!deviceA || !deviceB || deviceA.id === deviceB.id) throw httpError(422, 'distance_endpoints_invalid', 'Choose two different devices');
+    const media = string(req.query.media || 'fibre', 'media', { required: true, max: 64 });
+    const pair = (left, right) => db('distance_samples').where({ site_id: site.id, media }).where((builder) => builder.where({ endpoint_a_device_id: left, endpoint_b_device_id: right }).orWhere({ endpoint_a_device_id: right, endpoint_b_device_id: left }));
+    let samples = await pair(deviceA.id, deviceB.id).orderBy('observed_at', 'desc').limit(20);
+    let matchType = 'device';
+    if (!samples.length && deviceA.rack_id && deviceB.rack_id) {
+      samples = await db('distance_samples').where({ site_id: site.id, media }).where((builder) => builder.where({ endpoint_a_rack_id: deviceA.rack_id, endpoint_b_rack_id: deviceB.rack_id }).orWhere({ endpoint_a_rack_id: deviceB.rack_id, endpoint_b_rack_id: deviceA.rack_id })).orderBy('observed_at', 'desc').limit(20);
+      matchType = samples.length ? 'rack' : 'none';
+    } else if (!samples.length) matchType = 'none';
+    const lengths = samples.map((sample) => Number(sample.length_metres));
+    res.json({ matchType, suggestedLengthMetres: lengths.length ? Math.max(...lengths) : null, samples: samples.map((sample) => ({ lengthMetres: Number(sample.length_metres), observedAt: sample.observed_at })) });
   } catch (error) { next(error); }
 });
 
@@ -526,12 +710,14 @@ router.post('/photos/:entityType/:entityPublicId', auth.requireWrite, express.ra
   try {
     if (!Buffer.isBuffer(req.body) || !req.body.length) throw httpError(415, 'photo_type_invalid', 'Photo must be JPEG, PNG, or WebP');
     const publicId = id();
-    await db.transaction(async (trx) => {
+    const created = await db.transaction(async (trx) => {
       await photoEntity(req.params.entityType, req.params.entityPublicId, trx);
-      await trx('photos').insert({ public_id: publicId, entity_type: req.params.entityType, entity_public_id: req.params.entityPublicId, name: string(req.headers['x-photo-name'], 'x-photo-name', { required: true, max: 255 }), description: string(req.headers['x-photo-description'], 'x-photo-description', { max: 2000 }) || '', media_type: req.headers['content-type'], content: req.body });
+      await trx('photos').where({ entity_type: req.params.entityType, entity_public_id: req.params.entityPublicId, is_current: true }).update({ is_current: false });
+      await trx('photos').insert({ public_id: publicId, entity_type: req.params.entityType, entity_public_id: req.params.entityPublicId, name: string(req.headers['x-photo-name'], 'x-photo-name', { required: true, max: 255 }), description: string(req.headers['x-photo-description'], 'x-photo-description', { max: 2000 }) || '', media_type: req.headers['content-type'], content: req.body, is_current: true });
       await audit.record(trx, req.user.id, 'photo.create', req.params.entityType, req.params.entityPublicId, { photoId: publicId });
+      return trx('photos').where({ public_id: publicId }).first();
     });
-    res.status(201).json({ publicId });
+    res.status(201).json({ publicId, name: created.name, description: created.description, mediaType: created.media_type, current: true, version: created.version, createdAt: created.created_at });
   } catch (error) { next(error); }
 });
 
@@ -540,7 +726,31 @@ router.get('/photos/:publicId/content', async (req, res, next) => {
 });
 
 router.get('/photos/:entityType/:entityPublicId', async (req, res, next) => {
-  try { await photoEntity(req.params.entityType, req.params.entityPublicId); res.json(await db('photos').where({ entity_type: req.params.entityType, entity_public_id: req.params.entityPublicId }).select('public_id as publicId', 'name', 'description', 'media_type as mediaType', 'created_at as createdAt')); } catch (error) { next(error); }
+  try {
+    await photoEntity(req.params.entityType, req.params.entityPublicId);
+    const photos = await db('photos').where({ entity_type: req.params.entityType, entity_public_id: req.params.entityPublicId }).orderBy('is_current', 'desc').orderBy('id', 'desc');
+    res.json(photos.map((photo) => ({ publicId: photo.public_id, name: photo.name, description: photo.description, mediaType: photo.media_type, current: Boolean(photo.is_current), version: photo.version, createdAt: photo.created_at })));
+  } catch (error) { next(error); }
+});
+
+router.delete('/photos/:publicId', auth.requireWrite, async (req, res, next) => {
+  try {
+    const requestedVersion = integer(Number(req.query.baseVersion), 'baseVersion', { required: true, min: 0 });
+    await db.transaction(async (trx) => {
+      const photo = await trx('photos').where({ public_id: req.params.publicId }).first();
+      if (!photo) throw httpError(404, 'photo_not_found', 'Photo not found');
+      if (photo.version !== requestedVersion) {
+        const conflict = httpError(409, 'version_conflict', 'The photo changed since it was loaded'); conflict.serverVersion = photo.version; throw conflict;
+      }
+      await trx('photos').where({ id: photo.id }).delete();
+      if (photo.is_current) {
+        const prior = await trx('photos').where({ entity_type: photo.entity_type, entity_public_id: photo.entity_public_id }).orderBy('id', 'desc').first();
+        if (prior) await trx('photos').where({ id: prior.id }).update({ is_current: true, version: prior.version + 1 });
+      }
+      await audit.record(trx, req.user.id, 'photo.delete', photo.entity_type, photo.entity_public_id, { photoId: photo.public_id });
+    });
+    res.status(204).end();
+  } catch (error) { next(error); }
 });
 
 router.get('/audit', auth.requireAdmin, async (_req, res, next) => {

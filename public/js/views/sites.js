@@ -1,5 +1,6 @@
 import { api } from '../api.js';
 import { app, el, emptyState, errorMessage, field, multilineField, notify, pageHead } from '../dom.js';
+import { infrastructureSection } from './infrastructure.js';
 
 /** @typedef {import('../../../server/types/browser-models').User} User */
 /** @typedef {import('../../../server/types/browser-models').Site} Site */
@@ -96,14 +97,10 @@ export async function siteView(publicId, user, section = 'overview') {
         }, device.label || device.hostname)) : el('span', { class: 'rack-empty' }, 'No front devices')),
       el('p', { class: 'muted rack-meta' }, rack.suiteLine ? `Suite line ${rack.suiteLine}` : 'Suite line not recorded'));
   });
-  const recordSections = kinds.map(([, label], index) => el('section', { class: 'panel record-panel' },
-    el('div', { class: 'section-head' }, el('h2', {}, label), el('span', { class: 'count-badge' }, records[index].length)), records[index].length
-      ? el('ul', { class: 'record-list' }, ...records[index].map((record) => el('li', {}, record.name || record.label || record.hostname || `${record.endpointA} → ${record.endpointB}`)))
-      : el('p', { class: 'empty-inline' }, `No ${label.toLowerCase()} recorded.`)));
   const roomSection = rooms.length ? el('section', { class: 'panel' }, el('div', { class: 'section-head' }, el('h2', {}, 'Rooms'), el('span', { class: 'count-badge' }, rooms.length)), el('div', { class: 'room-grid' }, ...roomCards)) : emptyState('No rooms recorded', 'Add a room before placing racks and devices.');
   const rackSection = racks.length ? el('section', { class: 'panel' }, el('div', { class: 'section-head' }, el('h2', {}, section === 'racks' ? 'Rack elevations' : 'Rack previews'), el('span', { class: 'count-badge' }, racks.length)), el('div', { class: `rack-preview-grid${section === 'racks' ? ' rack-elevation-grid' : ''}` }, ...rackPreviews)) : emptyState('No racks recorded', 'Racks are canonical site records and remain available to every work package.');
   const selectedIndex = { rooms: 0, racks: 1, 'termination-points': 2, devices: 3, distances: 4 }[section];
-  const content = section === 'rooms' ? roomSection : section === 'racks' ? rackSection : selectedIndex !== undefined ? recordSections[selectedIndex] : el('div', { class: 'stack' },
+  const content = selectedIndex !== undefined ? await infrastructureSection({ site, user, section, records, rerender: () => siteView(publicId, user, section) }) : el('div', { class: 'stack' },
     el('div', { class: 'summary-grid site-summary' },
       el('div', { class: 'summary-card' }, el('strong', {}, rooms.length), el('span', {}, 'Rooms')),
       el('div', { class: 'summary-card' }, el('strong', {}, racks.length), el('span', {}, 'Racks')),

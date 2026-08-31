@@ -5,6 +5,9 @@ interface OfflineOperation {
   readonly body?: string | null;
   readonly createdAt?: number;
   readonly operationKey?: string | null;
+  readonly temporaryId?: string | null;
+  readonly dependsOn?: string[];
+  readonly requiredTemporaryIds?: string[];
   readonly entityType?: string | null;
   readonly entityPublicId?: string | null;
   readonly label?: string | null;
