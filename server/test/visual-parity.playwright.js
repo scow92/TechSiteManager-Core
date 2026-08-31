@@ -86,6 +86,11 @@ async function seedSharedState(page) {
       circuits: [{ circuitReference: 'CIRCUIT-VISUAL-1', description: 'Fictional connection', media: 'fibre', status: 'planned', segments: [{ segmentReference: 'SEGMENT-VISUAL-1', fromEndpoint: 'demo-switch-01:1', toEndpoint: 'ODF-DEMO-1:1', lengthMetres: 18.25 }] }],
       consumableRequirements: [{ description: 'Fictional labels', quantityRequired: 4, unit: 'each' }]
     });
+    const pixel = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), (character) => character.charCodeAt(0));
+    for (const [entityType, entityPublicId, name] of [['work_package', workPackage.publicId, 'Fictional package handover'], ['work_item', workPackage.workItems[0].publicId, 'Fictional work-item handover']]) {
+      const response = await fetch(`/api/photos/${entityType}/${entityPublicId}`, { method: 'POST', headers: { 'Content-Type': 'image/png', 'X-Photo-Name': encodeURIComponent(name), 'X-Photo-Description': encodeURIComponent('Synthetic visual evidence') }, body: pixel });
+      if (!response.ok) throw new Error(`handover photo: ${response.status}`);
+    }
     return { sitePublicId: site.publicId, packagePublicId: workPackage.publicId };
   });
 }
@@ -201,6 +206,7 @@ async function captureResponsiveMatrix(page, base, shared) {
         [`package/${shared.packagePublicId}/work-items`, 'PKG-VISUAL-001', 'package-work-items', 'Add work item'],
         [`package/${shared.packagePublicId}/connections`, 'PKG-VISUAL-001', 'package-connections', 'Add circuit'],
         [`package/${shared.packagePublicId}/consumables`, 'PKG-VISUAL-001', 'package-consumables', 'Add consumable requirement'],
+        [`package/${shared.packagePublicId}/handover`, 'PKG-VISUAL-001', 'package-handover', 'Package handover'],
         ['import', 'Import', 'import-no-provider', 'No import providers are installed.'],
         ['settings', 'Settings', 'settings', 'Appearance']
       ];
@@ -208,6 +214,23 @@ async function captureResponsiveMatrix(page, base, shared) {
         await route(page, `${zero.base}/#${hash}`, heading, stableText);
         await capture(page, `${name}-desktop-dark`);
       }
+
+      await page.evaluate(async (publicId) => {
+        let pack = await (await fetch(`/api/work-packages/${publicId}`)).json();
+        for (const item of pack.workItems) {
+          if (!['complete', 'cancelled'].includes(item.status)) await fetch(`/api/work-packages/${publicId}/work-items/${item.publicId}/completion`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ _baseVersion: item.version }) });
+        }
+        pack = await (await fetch(`/api/work-packages/${publicId}`)).json();
+        const response = await fetch(`/api/work-packages/${publicId}/completion`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ _baseVersion: pack.version }) });
+        if (!response.ok) throw new Error(`package completion: ${response.status}`);
+      }, shared.packagePublicId);
+      await route(page, `${zero.base}/#package/${shared.packagePublicId}/details`, 'PKG-VISUAL-001', 'Reopen work package');
+      await capture(page, 'package-completed-desktop-dark');
+      await page.goto(`${zero.base}/api/work-packages/${shared.packagePublicId}/export?format=print`);
+      await page.getByRole('heading', { name: 'PKG-VISUAL-001', exact: true }).waitFor();
+      await page.emulateMedia({ media: 'print' });
+      await capture(page, 'package-print-desktop-light');
+      await page.emulateMedia({ media: 'screen' });
 
       await route(page, `${zero.base}/#package/00000000-0000-4000-8000-000000000000`, 'Work package unavailable');
       await capture(page, 'missing-record-error-desktop-dark');

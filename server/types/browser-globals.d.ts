@@ -23,6 +23,7 @@ declare const OfflineStore: {
   put(store: string, value: unknown, key?: string): Promise<void>;
   delete(store: string, key: string): Promise<void>;
   all(store: string): Promise<OfflineOperation[]>;
+  completeOperation(id: string, remap: Record<string, unknown> | null): Promise<void>;
   updateOperation(id: string, changes: Record<string, unknown>): Promise<void>;
   retryDeadLetter(id: string): Promise<void>;
 };

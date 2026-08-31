@@ -25,9 +25,9 @@ test('fresh generic baseline installs with integrity and no legacy migration his
   assert.equal((await db.raw('PRAGMA integrity_check'))[0].integrity_check, 'ok');
   assert.deepEqual(await db.raw('PRAGMA foreign_key_check'), []);
   const migrations = await db('knex_migrations').select('name');
-  assert.deepEqual(migrations.map((row) => row.name), ['0001_generic_baseline.js', '0002_plugin_api_v2_extensions.js', '0003_phase2_infrastructure.js']);
+  assert.deepEqual(migrations.map((row) => row.name), ['0001_generic_baseline.js', '0002_plugin_api_v2_extensions.js', '0003_phase2_infrastructure.js', '0004_phase3_work_packages.js']);
   const tables = (await db.raw("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).map((row) => row.name);
-  for (const expected of ['sites', 'rooms', 'racks', 'termination_points', 'termination_positions', 'devices', 'distance_samples', 'photos', 'work_packages', 'work_items', 'circuits', 'segments', 'extension_values', 'import_sources', 'import_runs', 'import_entity_links', 'import_field_ownership', 'import_drafts']) assert.ok(tables.includes(expected));
+  for (const expected of ['sites', 'rooms', 'racks', 'termination_points', 'termination_positions', 'devices', 'distance_samples', 'photos', 'work_packages', 'work_items', 'work_package_saves', 'circuits', 'segments', 'extension_values', 'import_sources', 'import_runs', 'import_entity_links', 'import_field_ownership', 'import_drafts']) assert.ok(tables.includes(expected));
 });
 
 test('database constraints defend roles, statuses, quantities, and foreign keys', async () => {
@@ -58,7 +58,17 @@ test('SQLite-safe backup and restore preserve generic records and provenance', a
   const photoBytes = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
   await db('photos').insert({ public_id: crypto.randomUUID(), entity_type: 'rack', entity_public_id: rackPublicId, name: 'Fictional recovery rack', media_type: 'image/jpeg', content: photoBytes, is_current: true });
   const [userId] = await db('users').insert({ public_id: crypto.randomUUID(), username: 'recovery-admin', password_hash: 'test', role: 'admin', display_name: 'Recovery Admin', active: 1 });
-  const [packageId] = await db('work_packages').insert({ public_id: crypto.randomUUID(), site_id: site.id, package_ref: 'PKG-RECOVERY-1', external_reference: 'EXT-RECOVERY-1', title: 'Recovery fixture', status: 'active' });
+  const packagePublicId = crypto.randomUUID(); const workItemPublicId = crypto.randomUUID(); const packagePhotoPublicId = crypto.randomUUID(); const itemPhotoPublicId = crypto.randomUUID(); const saveId = crypto.randomUUID();
+  const [packageId] = await db('work_packages').insert({ public_id: packagePublicId, site_id: site.id, package_ref: 'PKG-RECOVERY-1', external_reference: 'EXT-RECOVERY-1', project_reference: 'PROJECT-RECOVERY', title: 'Recovery fixture', status: 'active', lead_assignee: 'recovery-admin', assignees_json: '["recovery-admin"]' });
+  const [workItemId] = await db('work_items').insert({ public_id: workItemPublicId, work_package_id: packageId, item_reference: 'ITEM-RECOVERY-1', title: 'Recovery handover item', status: 'active', lead_assignee: 'recovery-admin', assignees_json: '["recovery-admin"]' });
+  await db('photos').insert([
+    { public_id: packagePhotoPublicId, entity_type: 'work_package', entity_public_id: packagePublicId, name: 'Fictional package handover', description: 'Package recovery evidence', media_type: 'image/jpeg', content: photoBytes, is_current: true },
+    { public_id: itemPhotoPublicId, entity_type: 'work_item', entity_public_id: workItemPublicId, name: 'Fictional item handover', description: 'Item recovery evidence', media_type: 'image/jpeg', content: photoBytes, is_current: true }
+  ]);
+  const completedAt = new Date().toISOString();
+  await db('work_items').where({ id: workItemId }).update({ status: 'complete', completed_at: completedAt, completed_by_user_id: userId, version: 1 });
+  await db('work_packages').where({ id: packageId }).update({ status: 'complete', completed_at: completedAt, completed_by_user_id: userId, version: 1 });
+  await db('work_package_saves').insert({ save_id: saveId, work_package_id: packageId, actor_user_id: userId });
   const [sourceId] = await db('import_sources').insert({ public_id: crypto.randomUUID(), provider_id: 'example.recovery.provider', external_source_id: 'recovery-source-1', connector_id: 'core.file', first_seen_at: new Date().toISOString(), last_seen_at: new Date().toISOString() });
   const [runId] = await db('import_runs').insert({ public_id: crypto.randomUUID(), source_id: sourceId, content_hash: `sha256:${'a'.repeat(64)}`, source_fingerprint: `sha256:${'b'.repeat(64)}`, provider_version: '1.0.0', status: 'applied', actor_user_id: userId, started_at: new Date().toISOString(), finished_at: new Date().toISOString() });
   await db('import_entity_links').insert({ public_id: crypto.randomUUID(), source_id: sourceId, source_record_key: 'package:recovery', entity_type: 'work_package', entity_public_id: (await db('work_packages').where({ id: packageId }).first()).public_id, first_run_id: runId, last_seen_run_id: runId });
@@ -70,12 +80,43 @@ test('SQLite-safe backup and restore preserve generic records and provenance', a
   const restoredDb = knex({ ...knexfile, connection: { filename: restored } });
   try {
     assert.equal((await restoredDb('work_packages').where({ package_ref: 'PKG-RECOVERY-1' }).first()).title, 'Recovery fixture');
+    assert.equal((await restoredDb('work_packages').where({ package_ref: 'PKG-RECOVERY-1' }).first()).status, 'complete');
+    assert.deepEqual(JSON.parse((await restoredDb('work_items').where({ public_id: workItemPublicId }).first()).assignees_json), ['recovery-admin']);
+    assert.equal((await restoredDb('work_package_saves').where({ save_id: saveId }).first()).work_package_id, packageId);
+    assert.deepEqual((await restoredDb('photos').where({ public_id: packagePhotoPublicId }).first()).content, photoBytes);
+    assert.deepEqual((await restoredDb('photos').where({ public_id: itemPhotoPublicId }).first()).content, photoBytes);
     assert.equal((await restoredDb('import_entity_links').count({ count: '*' }).first()).count, 1);
     assert.equal((await restoredDb('termination_positions').where({ termination_point_id: pointId }).first()).label, 'Fictional fibre 4');
     assert.equal(Number((await restoredDb('distance_samples').where({ endpoint_a_device_id: firstDeviceId }).first()).length_metres), 14.5);
     assert.deepEqual((await restoredDb('photos').where({ entity_public_id: rackPublicId }).first()).content, photoBytes);
     assert.deepEqual(await restoredDb.raw('PRAGMA foreign_key_check'), []);
   } finally { await restoredDb.destroy(); }
+});
+
+test('phase 3 migration preserves legacy completion and installs mutation locks', async () => {
+  const file = path.join(testRoot, 'phase3-upgrade', 'upgrade.db'); fs.mkdirSync(path.dirname(file), { recursive: true });
+  const upgradeDb = knex({ ...knexfile, connection: { filename: file } });
+  try {
+    await upgradeDb.migrate.up({ name: '0001_generic_baseline.js' });
+    await upgradeDb.migrate.up({ name: '0002_plugin_api_v2_extensions.js' });
+    await upgradeDb.migrate.up({ name: '0003_phase2_infrastructure.js' });
+    const [siteId] = await upgradeDb('sites').insert({ public_id: crypto.randomUUID(), code: 'UPGRADE-01', name: 'Fictional Upgrade Site' });
+    const packagePublicId = crypto.randomUUID(); const itemPublicId = crypto.randomUUID();
+    const [packageId] = await upgradeDb('work_packages').insert({ public_id: packagePublicId, site_id: siteId, package_ref: 'PKG-UPGRADE-1', title: 'Legacy complete package', status: 'complete' });
+    await upgradeDb('work_items').insert({ public_id: itemPublicId, work_package_id: packageId, item_reference: 'ITEM-UPGRADE-1', title: 'Legacy complete item', status: 'complete' });
+    await upgradeDb.migrate.latest();
+    const pack = await upgradeDb('work_packages').where({ public_id: packagePublicId }).first(); const item = await upgradeDb('work_items').where({ public_id: itemPublicId }).first();
+    assert.ok(pack.completed_at); assert.equal(pack.completed_by_user_id, null); assert.ok(item.completed_at); assert.equal(item.completed_by_user_id, null);
+    await assert.rejects(upgradeDb('work_packages').where({ id: packageId }).update({ title: 'Rejected mutation', version: pack.version + 1 }), /work package is complete/);
+    await assert.rejects(upgradeDb('work_items').where({ public_id: itemPublicId }).delete(), /work package is complete/);
+    assert.deepEqual(await upgradeDb.raw('PRAGMA foreign_key_check'), []);
+    await upgradeDb.migrate.rollback();
+    assert.equal((await upgradeDb('work_packages').where({ public_id: packagePublicId }).first()).title, 'Legacy complete package');
+    assert.equal((await upgradeDb('work_items').where({ public_id: itemPublicId }).first()).title, 'Legacy complete item');
+    await upgradeDb.migrate.latest();
+    assert.ok((await upgradeDb('work_items').where({ public_id: itemPublicId }).first()).completed_at);
+    assert.deepEqual(await upgradeDb.raw('PRAGMA foreign_key_check'), []);
+  } finally { await upgradeDb.destroy(); }
 });
 
 test('restore refuses overwrite and backup refuses the live data directory', async () => {

@@ -69,7 +69,8 @@ module.exports = function createApp(registry) {
     let error = err;
     if (err && err.type === 'entity.parse.failed') error = httpError(400, 'invalid_json', 'Request body must contain valid JSON');
     if (err && err.type === 'entity.too.large') error = httpError(413, 'request_too_large', 'Request is too large');
-    if (err && String(err.code || '').startsWith('SQLITE_CONSTRAINT')) error = httpError(409, 'constraint_conflict', 'The request conflicts with an existing record or relationship');
+    if (err && String(err.message || '').includes('work package is complete')) error = httpError(423, 'work_package_complete', 'Reopen the completed work package before making changes');
+    else if (err && String(err.code || '').startsWith('SQLITE_CONSTRAINT')) error = httpError(409, 'constraint_conflict', 'The request conflicts with an existing record or relationship');
     const mapped = errorBody(error, req.id);
     if (error && typeof error === 'object' && 'serverVersion' in error && error.serverVersion !== undefined) mapped.body.serverVersion = Number(error.serverVersion);
     const errorCode = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : 'internal_error';

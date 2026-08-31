@@ -6,6 +6,8 @@ const db = require('../db/knex');
 const auth = require('../lib/auth');
 const audit = require('../lib/audit');
 const { packageDetail } = require('../lib/work-packages');
+const { saveSnapshot, OPEN_STATUSES } = require('../lib/work-package-editor');
+const { assertMutable, assertEntityMutable } = require('../lib/work-package-locks');
 const { knownKeys, string, integer, number, array, enumeration, uuid } = require('../lib/validation');
 const { httpError } = require('../lib/errors');
 
@@ -13,6 +15,11 @@ const router = express.Router();
 const PACKAGE_STATUSES = ['planned', 'active', 'blocked', 'complete', 'cancelled'];
 
 function id() { return crypto.randomUUID(); }
+
+function decodedHeader(value) {
+  const text = String(value || '');
+  try { return decodeURIComponent(text); } catch { return text; }
+}
 
 function baseVersion(body) {
   if (!Number.isInteger(body && body._baseVersion)) throw httpError(428, 'base_version_required', '_baseVersion is required');
@@ -380,8 +387,8 @@ router.get('/sites/:sitePublicId/distances/suggestions', async (req, res, next) 
 
 router.get('/work-packages', async (_req, res, next) => {
   try {
-    const rows = await db('work_packages as w').join('sites as s', 's.id', 'w.site_id').select('w.public_id', 'w.package_ref', 'w.external_reference', 'w.project_reference', 'w.title', 'w.description', 'w.status', 'w.version', 's.public_id as site_public_id', 's.code as site_code', 's.name as site_name').orderBy('w.updated_at', 'desc');
-    res.json(rows.map((row) => ({ publicId: row.public_id, packageReference: row.package_ref, externalReference: row.external_reference, projectReference: row.project_reference, title: row.title, description: row.description, status: row.status, version: row.version, sitePublicId: row.site_public_id, siteCode: row.site_code, siteName: row.site_name })));
+    const rows = await db('work_packages as w').join('sites as s', 's.id', 'w.site_id').select('w.public_id', 'w.package_ref', 'w.external_reference', 'w.project_reference', 'w.title', 'w.description', 'w.status', 'w.version', 'w.completed_at', 's.public_id as site_public_id', 's.code as site_code', 's.name as site_name').orderBy('w.updated_at', 'desc');
+    res.json(rows.map((row) => ({ publicId: row.public_id, packageReference: row.package_ref, externalReference: row.external_reference, projectReference: row.project_reference, title: row.title, description: row.description, status: row.status, completedAt: row.completed_at, version: row.version, sitePublicId: row.site_public_id, siteCode: row.site_code, siteName: row.site_name })));
   } catch (error) { next(error); }
 });
 
@@ -399,10 +406,10 @@ router.post('/work-packages', auth.requireWrite, async (req, res, next) => {
     const createdPublicId = id();
     await db.transaction(async (trx) => {
       const site = await siteByPublicId(uuid(req.body.sitePublicId, 'sitePublicId'), trx);
-      const [packageId] = await trx('work_packages').insert({ public_id: createdPublicId, site_id: site.id, package_ref: string(req.body.packageReference, 'packageReference', { required: true, max: 255 }), external_reference: string(req.body.externalReference, 'externalReference', { max: 255 }), project_reference: string(req.body.projectReference, 'projectReference', { max: 255 }), title: string(req.body.title, 'title', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', status: enumeration(req.body.status || 'planned', 'status', PACKAGE_STATUSES, true), lead_assignee: string(req.body.leadAssignee, 'leadAssignee', { max: 64 }), assignees_json: JSON.stringify(assigned) });
+      const [packageId] = await trx('work_packages').insert({ public_id: createdPublicId, site_id: site.id, package_ref: string(req.body.packageReference, 'packageReference', { required: true, max: 255 }), external_reference: string(req.body.externalReference, 'externalReference', { max: 255 }), project_reference: string(req.body.projectReference, 'projectReference', { max: 255 }), title: string(req.body.title, 'title', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', status: enumeration(req.body.status || 'planned', 'status', OPEN_STATUSES, true), lead_assignee: string(req.body.leadAssignee, 'leadAssignee', { max: 64 }), assignees_json: JSON.stringify(assigned) });
       for (const [sequence, item] of workItems.entries()) {
-        knownKeys(item, ['itemReference', 'title', 'description', 'status'], `workItems[${sequence}]`);
-        await trx('work_items').insert({ public_id: id(), work_package_id: packageId, item_reference: string(item.itemReference, `workItems[${sequence}].itemReference`, { required: true, max: 255 }), title: string(item.title, `workItems[${sequence}].title`, { required: true, max: 255 }), description: string(item.description, `workItems[${sequence}].description`, { max: 20_000 }) || '', status: enumeration(item.status || 'planned', `workItems[${sequence}].status`, PACKAGE_STATUSES, true), sequence });
+        knownKeys(item, ['itemReference', 'title', 'description', 'status', 'leadAssignee', 'assignees'], `workItems[${sequence}]`);
+        await trx('work_items').insert({ public_id: id(), work_package_id: packageId, item_reference: string(item.itemReference, `workItems[${sequence}].itemReference`, { required: true, max: 255 }), title: string(item.title, `workItems[${sequence}].title`, { required: true, max: 255 }), description: string(item.description, `workItems[${sequence}].description`, { max: 20_000 }) || '', status: enumeration(item.status || 'planned', `workItems[${sequence}].status`, OPEN_STATUSES, true), lead_assignee: string(item.leadAssignee, `workItems[${sequence}].leadAssignee`, { max: 64 }), assignees_json: JSON.stringify(assignees(item.assignees, `workItems[${sequence}].assignees`)), sequence });
       }
       for (const [circuitIndex, circuit] of circuits.entries()) {
         knownKeys(circuit, ['circuitReference', 'description', 'media', 'status', 'segments'], `circuits[${circuitIndex}]`);
@@ -433,8 +440,9 @@ router.put('/work-packages/:publicId', auth.requireWrite, async (req, res, next)
   try {
     const requestedVersion = baseVersion(req.body);
     knownKeys(req.body, ['packageReference', 'externalReference', 'projectReference', 'title', 'description', 'status', 'leadAssignee', 'assignees', '_baseVersion']);
-    const changes = { package_ref: string(req.body.packageReference, 'packageReference', { required: true, max: 255 }), external_reference: string(req.body.externalReference, 'externalReference', { max: 255 }), project_reference: string(req.body.projectReference, 'projectReference', { max: 255 }), title: string(req.body.title, 'title', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', status: enumeration(req.body.status, 'status', PACKAGE_STATUSES, true), lead_assignee: string(req.body.leadAssignee, 'leadAssignee', { max: 64 }), assignees_json: JSON.stringify(assignees(req.body.assignees)), version: requestedVersion + 1, updated_at: db.fn.now() };
+    const changes = { package_ref: string(req.body.packageReference, 'packageReference', { required: true, max: 255 }), external_reference: string(req.body.externalReference, 'externalReference', { max: 255 }), project_reference: string(req.body.projectReference, 'projectReference', { max: 255 }), title: string(req.body.title, 'title', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 20_000 }) || '', status: enumeration(req.body.status, 'status', OPEN_STATUSES, true), lead_assignee: string(req.body.leadAssignee, 'leadAssignee', { max: 64 }), assignees_json: JSON.stringify(assignees(req.body.assignees)), version: requestedVersion + 1, updated_at: db.fn.now() };
     await db.transaction(async (trx) => {
+      assertMutable(await workPackageRow(trx, req.params.publicId));
       const updated = await trx('work_packages').where({ public_id: req.params.publicId, version: requestedVersion }).update(changes);
       if (!updated) {
         const current = await trx('work_packages').where({ public_id: req.params.publicId }).first();
@@ -442,6 +450,45 @@ router.put('/work-packages/:publicId', auth.requireWrite, async (req, res, next)
         throw httpError(409, 'version_conflict', 'The work package changed since it was loaded');
       }
       await audit.record(trx, req.user.id, 'work_package.update', 'work_package', req.params.publicId);
+    });
+    res.json(await packageDetail(req.params.publicId));
+  } catch (error) { next(error); }
+});
+
+router.put('/work-packages/:publicId/editor', auth.requireWrite, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('authenticated route missing user');
+    res.json(await saveSnapshot(req.params.publicId, req.body, req.user.id));
+  } catch (error) { next(error); }
+});
+
+router.post('/work-packages/:publicId/completion', auth.requireAdmin, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['_baseVersion']);
+    const requestedVersion = baseVersion(req.body);
+    await db.transaction(async (trx) => {
+      const pack = await workPackageRow(trx, req.params.publicId);
+      if (pack.status === 'complete') return;
+      if (pack.version !== requestedVersion) { const error = httpError(409, 'version_conflict', 'The work package changed since it was loaded'); error.serverVersion = pack.version; throw error; }
+      if (await trx('work_items').where({ work_package_id: pack.id }).whereNotIn('status', ['complete', 'cancelled']).first()) throw httpError(409, 'work_items_incomplete', 'Complete or cancel every work item before completing the package');
+      await trx('work_packages').where({ id: pack.id, version: requestedVersion }).update({ status: 'complete', completed_at: new Date().toISOString(), completed_by_user_id: req.user.id, version: requestedVersion + 1, updated_at: trx.fn.now() });
+      await audit.record(trx, req.user.id, 'work_package.complete', 'work_package', req.params.publicId);
+    });
+    res.json(await packageDetail(req.params.publicId));
+  } catch (error) { next(error); }
+});
+
+router.delete('/work-packages/:publicId/completion', auth.requireAdmin, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['_baseVersion', 'status']);
+    const requestedVersion = baseVersion(req.body);
+    const status = enumeration(req.body.status || 'active', 'status', OPEN_STATUSES, true);
+    await db.transaction(async (trx) => {
+      const pack = await workPackageRow(trx, req.params.publicId);
+      if (pack.status !== 'complete') return;
+      if (pack.version !== requestedVersion) { const error = httpError(409, 'version_conflict', 'The work package changed since it was loaded'); error.serverVersion = pack.version; throw error; }
+      await trx('work_packages').where({ id: pack.id, version: requestedVersion }).update({ status, completed_at: null, completed_by_user_id: null, version: requestedVersion + 1, updated_at: trx.fn.now() });
+      await audit.record(trx, req.user.id, 'work_package.reopen', 'work_package', req.params.publicId);
     });
     res.json(await packageDetail(req.params.publicId));
   } catch (error) { next(error); }
@@ -458,9 +505,16 @@ function workItemValues(body) {
     item_reference: string(body.itemReference, 'itemReference', { required: true, max: 255 }),
     title: string(body.title, 'title', { required: true, max: 255 }),
     description: string(body.description, 'description', { max: 20_000 }) || '',
-    status: enumeration(body.status || 'planned', 'status', PACKAGE_STATUSES, true),
-    sequence: integer(body.sequence === undefined ? 0 : body.sequence, 'sequence', { required: true, min: 0, max: 100_000 })
+    status: enumeration(body.status || 'planned', 'status', OPEN_STATUSES, true),
+    sequence: integer(body.sequence === undefined ? 0 : body.sequence, 'sequence', { required: true, min: 0, max: 100_000 }),
+    lead_assignee: string(body.leadAssignee, 'leadAssignee', { max: 64 }),
+    assignees_json: JSON.stringify(assignees(body.assignees))
   };
+}
+
+async function touchPackage(trx, pack) {
+  const changed = await trx('work_packages').where({ id: pack.id, version: pack.version }).update({ version: pack.version + 1, updated_at: trx.fn.now() });
+  if (!changed) throw httpError(409, 'version_conflict', 'The work package changed since it was loaded');
 }
 
 function circuitValues(body) {
@@ -507,10 +561,12 @@ async function updateChild(trx, table, where, requestedVersion, values, notFound
 
 router.post('/work-packages/:workPackagePublicId/work-items', auth.requireWrite, async (req, res, next) => {
   try {
-    knownKeys(req.body, ['itemReference', 'title', 'description', 'status', 'sequence']);
+    knownKeys(req.body, ['itemReference', 'title', 'description', 'status', 'sequence', 'leadAssignee', 'assignees']);
     await db.transaction(async (trx) => {
       const pack = await workPackageRow(trx, req.params.workPackagePublicId); const publicId = id();
+      assertMutable(pack);
       await trx('work_items').insert({ public_id: publicId, work_package_id: pack.id, ...workItemValues(req.body) });
+      await touchPackage(trx, pack);
       await audit.record(trx, req.user.id, 'work_item.create', 'work_item', publicId);
     });
     res.status(201).json(await packageDetail(req.params.workPackagePublicId));
@@ -519,12 +575,51 @@ router.post('/work-packages/:workPackagePublicId/work-items', auth.requireWrite,
 
 router.put('/work-packages/:workPackagePublicId/work-items/:publicId', auth.requireWrite, async (req, res, next) => {
   try {
-    knownKeys(req.body, ['itemReference', 'title', 'description', 'status', 'sequence', '_baseVersion']);
+    knownKeys(req.body, ['itemReference', 'title', 'description', 'status', 'sequence', 'leadAssignee', 'assignees', '_baseVersion']);
     const requestedVersion = baseVersion(req.body);
     await db.transaction(async (trx) => {
       const pack = await workPackageRow(trx, req.params.workPackagePublicId);
+      assertMutable(pack);
+      const current = await trx('work_items').where({ public_id: req.params.publicId, work_package_id: pack.id }).first();
+      if (current?.status === 'complete') throw httpError(423, 'work_item_complete', 'Clear work-item completion before editing it');
       await updateChild(trx, 'work_items', { public_id: uuid(req.params.publicId, 'publicId'), work_package_id: pack.id }, requestedVersion, workItemValues(req.body), 'work_item_not_found', 'Work item not found');
+      await touchPackage(trx, pack);
       await audit.record(trx, req.user.id, 'work_item.update', 'work_item', req.params.publicId);
+    });
+    res.json(await packageDetail(req.params.workPackagePublicId));
+  } catch (error) { next(error); }
+});
+
+router.post('/work-packages/:workPackagePublicId/work-items/:publicId/completion', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['_baseVersion']); const requestedVersion = baseVersion(req.body);
+    await db.transaction(async (trx) => {
+      const pack = await workPackageRow(trx, req.params.workPackagePublicId); assertMutable(pack);
+      const item = await trx('work_items').where({ public_id: uuid(req.params.publicId, 'publicId'), work_package_id: pack.id }).first();
+      if (!item) throw httpError(404, 'work_item_not_found', 'Work item not found');
+      if (item.status === 'complete') return;
+      if (item.version !== requestedVersion) { const error = httpError(409, 'version_conflict', 'The work item changed since it was loaded'); error.serverVersion = item.version; throw error; }
+      await trx('work_items').where({ id: item.id, version: requestedVersion }).update({ status: 'complete', completed_at: new Date().toISOString(), completed_by_user_id: req.user.id, version: requestedVersion + 1 });
+      await touchPackage(trx, pack);
+      await audit.record(trx, req.user.id, 'work_item.complete', 'work_item', req.params.publicId);
+    });
+    res.json(await packageDetail(req.params.workPackagePublicId));
+  } catch (error) { next(error); }
+});
+
+router.delete('/work-packages/:workPackagePublicId/work-items/:publicId/completion', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['_baseVersion', 'status']); const requestedVersion = baseVersion(req.body);
+    const status = enumeration(req.body.status || 'active', 'status', OPEN_STATUSES, true);
+    await db.transaction(async (trx) => {
+      const pack = await workPackageRow(trx, req.params.workPackagePublicId); assertMutable(pack);
+      const item = await trx('work_items').where({ public_id: uuid(req.params.publicId, 'publicId'), work_package_id: pack.id }).first();
+      if (!item) throw httpError(404, 'work_item_not_found', 'Work item not found');
+      if (item.status !== 'complete') return;
+      if (item.version !== requestedVersion) { const error = httpError(409, 'version_conflict', 'The work item changed since it was loaded'); error.serverVersion = item.version; throw error; }
+      await trx('work_items').where({ id: item.id, version: requestedVersion }).update({ status, completed_at: null, completed_by_user_id: null, version: requestedVersion + 1 });
+      await touchPackage(trx, pack);
+      await audit.record(trx, req.user.id, 'work_item.reopen', 'work_item', req.params.publicId);
     });
     res.json(await packageDetail(req.params.workPackagePublicId));
   } catch (error) { next(error); }
@@ -535,7 +630,9 @@ router.post('/work-packages/:workPackagePublicId/circuits', auth.requireWrite, a
     knownKeys(req.body, ['circuitReference', 'description', 'media', 'status']);
     await db.transaction(async (trx) => {
       const pack = await workPackageRow(trx, req.params.workPackagePublicId); const publicId = id();
+      assertMutable(pack);
       await trx('circuits').insert({ public_id: publicId, work_package_id: pack.id, ...circuitValues(req.body) });
+      await touchPackage(trx, pack);
       await audit.record(trx, req.user.id, 'circuit.create', 'circuit', publicId);
     });
     res.status(201).json(await packageDetail(req.params.workPackagePublicId));
@@ -548,7 +645,9 @@ router.put('/work-packages/:workPackagePublicId/circuits/:publicId', auth.requir
     const requestedVersion = baseVersion(req.body);
     await db.transaction(async (trx) => {
       const pack = await workPackageRow(trx, req.params.workPackagePublicId);
+      assertMutable(pack);
       await updateChild(trx, 'circuits', { public_id: uuid(req.params.publicId, 'publicId'), work_package_id: pack.id }, requestedVersion, circuitValues(req.body), 'circuit_not_found', 'Circuit not found');
+      await touchPackage(trx, pack);
       await audit.record(trx, req.user.id, 'circuit.update', 'circuit', req.params.publicId);
     });
     res.json(await packageDetail(req.params.workPackagePublicId));
@@ -566,7 +665,9 @@ router.post('/work-packages/:workPackagePublicId/circuits/:circuitPublicId/segme
     knownKeys(req.body, ['segmentReference', 'sequence', 'fromEndpoint', 'toEndpoint', 'lengthMetres', 'notes']);
     await db.transaction(async (trx) => {
       const pack = await workPackageRow(trx, req.params.workPackagePublicId); const circuit = await circuitRow(trx, pack.id, req.params.circuitPublicId); const publicId = id();
+      assertMutable(pack);
       await trx('segments').insert({ public_id: publicId, circuit_id: circuit.id, ...segmentValues(req.body) });
+      await touchPackage(trx, pack);
       await audit.record(trx, req.user.id, 'segment.create', 'segment', publicId);
     });
     res.status(201).json(await packageDetail(req.params.workPackagePublicId));
@@ -579,7 +680,9 @@ router.put('/work-packages/:workPackagePublicId/circuits/:circuitPublicId/segmen
     const requestedVersion = baseVersion(req.body);
     await db.transaction(async (trx) => {
       const pack = await workPackageRow(trx, req.params.workPackagePublicId); const circuit = await circuitRow(trx, pack.id, req.params.circuitPublicId);
+      assertMutable(pack);
       await updateChild(trx, 'segments', { public_id: uuid(req.params.publicId, 'publicId'), circuit_id: circuit.id }, requestedVersion, segmentValues(req.body), 'segment_not_found', 'Segment not found');
+      await touchPackage(trx, pack);
       await audit.record(trx, req.user.id, 'segment.update', 'segment', req.params.publicId);
     });
     res.json(await packageDetail(req.params.workPackagePublicId));
@@ -591,7 +694,9 @@ router.post('/work-packages/:workPackagePublicId/consumable-requirements', auth.
     knownKeys(req.body, ['cataloguePublicId', 'description', 'quantityRequired', 'unit']);
     await db.transaction(async (trx) => {
       const pack = await workPackageRow(trx, req.params.workPackagePublicId); const publicId = id();
+      assertMutable(pack);
       await trx('consumable_requirements').insert({ public_id: publicId, work_package_id: pack.id, ...(await requirementValues(trx, req.body)) });
+      await touchPackage(trx, pack);
       await audit.record(trx, req.user.id, 'consumable_requirement.create', 'consumable_requirement', publicId);
     });
     res.status(201).json(await packageDetail(req.params.workPackagePublicId));
@@ -604,7 +709,9 @@ router.put('/work-packages/:workPackagePublicId/consumable-requirements/:publicI
     const requestedVersion = baseVersion(req.body);
     await db.transaction(async (trx) => {
       const pack = await workPackageRow(trx, req.params.workPackagePublicId);
+      assertMutable(pack);
       await updateChild(trx, 'consumable_requirements', { public_id: uuid(req.params.publicId, 'publicId'), work_package_id: pack.id }, requestedVersion, await requirementValues(trx, req.body), 'consumable_requirement_not_found', 'Consumable requirement not found');
+      await touchPackage(trx, pack);
       await audit.record(trx, req.user.id, 'consumable_requirement.update', 'consumable_requirement', req.params.publicId);
     });
     res.json(await packageDetail(req.params.workPackagePublicId));
@@ -620,9 +727,22 @@ router.get('/search', async (req, res, next) => {
       .leftJoin('work_items as i', 'i.work_package_id', 'w.id')
       .leftJoin('circuits as c', 'c.work_package_id', 'w.id')
       .leftJoin('segments as g', 'g.circuit_id', 'c.id')
-      .where((builder) => builder.whereRaw('lower(w.package_ref) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(w.external_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(w.project_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(w.title) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(w.description) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(s.code) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(s.name) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.item_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.description, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(c.circuit_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(c.description, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(g.segment_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(g.from_endpoint, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(g.to_endpoint, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]))
+      .where((builder) => builder.whereRaw('lower(w.package_ref) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(w.external_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(w.project_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(w.title) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(w.description) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(w.lead_assignee, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(w.assignees_json) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(s.code) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(s.name) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.item_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.title, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.description, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.lead_assignee, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.assignees_json, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(c.circuit_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(c.description, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(g.segment_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(g.from_endpoint, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(g.to_endpoint, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]))
       .distinct('w.public_id', 'w.package_ref', 'w.external_reference', 'w.project_reference', 'w.title', 'w.status', 's.public_id as site_public_id', 's.code as site_code', 's.name as site_name').limit(100);
-    const results = rows.map((row) => ({ entityType: 'work_package', publicId: row.public_id, packageReference: row.package_ref, externalReference: row.external_reference, projectReference: row.project_reference, title: row.title, status: row.status, sitePublicId: row.site_public_id, siteCode: row.site_code, siteName: row.site_name }));
+    const matchingItems = rows.length ? await db('work_items as i').join('work_packages as w', 'w.id', 'i.work_package_id').whereIn('w.public_id', rows.map((row) => row.public_id)).where((builder) => builder.whereRaw('lower(i.item_reference) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(i.title) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(i.description) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.lead_assignee, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(i.assignees_json) LIKE ? ESCAPE \'\\\'', [pattern])).select('w.public_id as package_public_id', 'i.public_id', 'i.item_reference', 'i.title', 'i.status').orderBy(['i.sequence', 'i.id']) : [];
+    const exact = (value) => String(value || '').toLowerCase() === query;
+    const prefix = (value) => String(value || '').toLowerCase().startsWith(query);
+    const results = rows.map((row) => {
+      const matchedWorkItems = matchingItems.filter((item) => item.package_public_id === row.public_id).map((item) => ({ publicId: item.public_id, itemReference: item.item_reference, title: item.title, status: item.status }));
+      let matchType = 'content'; let rank = 50;
+      if (exact(row.package_ref)) { matchType = 'package-reference'; rank = 0; }
+      else if (exact(row.external_reference)) { matchType = 'external-reference'; rank = 1; }
+      else if (exact(row.project_reference)) { matchType = 'project'; rank = 2; }
+      else if (matchedWorkItems.some((item) => exact(item.itemReference))) { matchType = 'work-item'; rank = 3; }
+      else if (exact(row.site_code) || exact(row.site_name)) { matchType = 'site'; rank = 4; }
+      else if ([row.package_ref, row.external_reference, row.project_reference, row.title].some(prefix)) rank = 10;
+      return { entityType: 'work_package', publicId: row.public_id, packageReference: row.package_ref, externalReference: row.external_reference, projectReference: row.project_reference, title: row.title, status: row.status, group: row.status === 'complete' ? 'completed' : 'active', matchType, matchedWorkItems, sitePublicId: row.site_public_id, siteCode: row.site_code, siteName: row.site_name, rank };
+    }).sort((left, right) => left.rank - right.rank || left.packageReference.localeCompare(right.packageReference));
     if (scope === 'all' && results.length < 100) {
       const siteRows = await db('sites').where((builder) => builder.whereRaw('lower(code) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(name) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(description) LIKE ? ESCAPE \'\\\'', [pattern])).limit(100);
       results.push(...siteRows.map((row) => ({ entityType: 'site', publicId: row.public_id, title: row.name, reference: row.code, description: row.description, sitePublicId: row.public_id, siteCode: row.code, siteName: row.name })));
@@ -640,24 +760,43 @@ router.get('/search', async (req, res, next) => {
         results.push(...matches.map((row) => ({ entityType, publicId: row.public_id, title: row.result_title, sitePublicId: row.site_public_id, siteCode: row.site_code, siteName: row.site_name })));
       }
     }
-    res.json(results.slice(0, 100));
+    res.json(results.slice(0, 100).map(({ rank: _rank, ...result }) => result));
   } catch (error) { next(error); }
 });
+
+function safeExportName(value) { return String(value || 'work-package').replace(/[^a-z0-9._-]+/gi, '-').slice(0, 120) || 'work-package'; }
+function escapeHtml(value) { return String(value === null || value === undefined ? '' : value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]); }
+function printTable(headings, rows) { return `<div class="table-wrap"><table><thead><tr>${headings.map((heading) => `<th>${escapeHtml(heading)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`; }
 
 router.get('/work-packages/:publicId/export', async (req, res, next) => {
   try {
     const pack = await packageDetail(req.params.publicId);
-    if ((req.query.format || 'json') === 'json') return res.type('application/json').attachment(`${pack.packageReference}.json`).send(JSON.stringify(pack, null, 2));
-    if (req.query.format !== 'csv') throw httpError(422, 'export_format_invalid', 'Export format must be json or csv');
+    const format = req.query.format || 'json'; const fileName = safeExportName(pack.packageReference);
+    if (format === 'json') return res.type('application/json').attachment(`${fileName}.json`).send(JSON.stringify(pack, null, 2));
+    if (format === 'print') {
+      const workRows = pack.workItems.map((item) => [item.itemReference, item.title, item.status, item.leadAssignee || '', item.assignees.join(', '), item.completedAt || '']);
+      const segmentRows = pack.circuits.flatMap((circuit) => circuit.segments.map((segment) => [circuit.circuitReference, circuit.media, segment.segmentReference, segment.fromEndpoint, segment.toEndpoint, segment.lengthMetres === null ? '' : segment.lengthMetres, segment.notes]));
+      const requirementRows = pack.consumableRequirements.map((requirement) => [requirement.description, requirement.quantityRequired, requirement.unit || '']);
+      const photos = [{ label: 'Package', photos: pack.handoverPhotos }, ...pack.workItems.map((item) => ({ label: item.itemReference, photos: item.handoverPhotos }))].flatMap((group) => group.photos.map((photo) => `<figure><img src="/api/photos/${encodeURIComponent(photo.publicId)}/content" alt="${escapeHtml(photo.name)}"><figcaption><strong>${escapeHtml(group.label)} · ${escapeHtml(photo.name)}</strong><br>${escapeHtml(photo.description)}</figcaption></figure>`)).join('');
+      const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(pack.packageReference)} print export</title><link rel="stylesheet" href="/css/styles.css"></head><body class="print-export"><main class="print-pack"><header><p class="eyebrow">${escapeHtml(pack.site.code)} — ${escapeHtml(pack.site.name)}</p><h1>${escapeHtml(pack.packageReference)}</h1><h2>${escapeHtml(pack.title)}</h2><p>${escapeHtml(pack.description)}</p><dl><dt>Status</dt><dd>${escapeHtml(pack.status)}</dd><dt>Project</dt><dd>${escapeHtml(pack.projectReference || '')}</dd><dt>External reference</dt><dd>${escapeHtml(pack.externalReference || '')}</dd><dt>Lead</dt><dd>${escapeHtml(pack.leadAssignee || '')}</dd><dt>Assignees</dt><dd>${escapeHtml(pack.assignees.join(', '))}</dd></dl></header><section><h2>Work items</h2>${printTable(['Reference', 'Title', 'Status', 'Lead', 'Assignees', 'Completed'], workRows)}</section><section><h2>Connections</h2>${printTable(['Circuit', 'Media', 'Segment', 'From', 'To', 'Length (m)', 'Notes'], segmentRows)}</section><section><h2>Requirements</h2>${printTable(['Description', 'Quantity', 'Unit'], requirementRows)}</section>${photos ? `<section class="print-photos"><h2>Handover evidence</h2>${photos}</section>` : ''}</main></body></html>`;
+      return res.type('html').send(html);
+    }
+    if (format !== 'csv') throw httpError(422, 'export_format_invalid', 'Export format must be json, csv, or print');
     const quote = (value) => {
-      const safe = String(value === null || value === undefined ? '' : value)
-        .replace(/"/g, '""').replace(/^[=+\-@]/, "'$&");
+      const safe = String(value === null || value === undefined ? '' : value).replace(/"/g, '""').replace(/^[=+\-@]/, "'$&");
       return `"${safe}"`;
     };
-    const rows = [['record_type', 'reference', 'description', 'from', 'to', 'media', 'length_metres']];
-    for (const item of pack.workItems) rows.push(['work_item', item.itemReference, item.description, '', '', '', '']);
-    for (const circuit of pack.circuits) for (const segment of circuit.segments) rows.push(['segment', segment.segmentReference, circuit.description, segment.fromEndpoint, segment.toEndpoint, circuit.media, segment.lengthMetres || '']);
-    res.type('text/csv').attachment(`${pack.packageReference}.csv`).send(rows.map((row) => row.map(quote).join(',')).join('\n'));
+    const rows = [['record_type', 'parent_reference', 'reference', 'title_or_description', 'status', 'lead_assignee', 'assignees', 'from', 'to', 'media', 'length_metres', 'quantity', 'unit', 'comment', 'completed_at']];
+    rows.push(['work_package', pack.site.code, pack.packageReference, pack.title, pack.status, pack.leadAssignee, pack.assignees.join('; '), '', '', '', '', '', '', pack.description, pack.completedAt]);
+    for (const item of pack.workItems) rows.push(['work_item', pack.packageReference, item.itemReference, item.title, item.status, item.leadAssignee, item.assignees.join('; '), '', '', '', '', '', '', item.description, item.completedAt]);
+    for (const circuit of pack.circuits) {
+      rows.push(['circuit', pack.packageReference, circuit.circuitReference, circuit.description, circuit.status, '', '', '', '', circuit.media, '', '', '', '', '']);
+      for (const segment of circuit.segments) rows.push(['segment', circuit.circuitReference, segment.segmentReference, '', '', '', '', segment.fromEndpoint, segment.toEndpoint, circuit.media, segment.lengthMetres, '', '', segment.notes, '']);
+    }
+    for (const requirement of pack.consumableRequirements) rows.push(['requirement', pack.packageReference, requirement.cataloguePublicId || '', requirement.description, '', '', '', '', '', '', '', requirement.quantityRequired, requirement.unit, '', '']);
+    for (const photo of pack.handoverPhotos) rows.push(['handover_photo', pack.packageReference, photo.publicId, photo.name, '', '', '', '', '', photo.mediaType, '', '', '', photo.description, photo.createdAt]);
+    for (const item of pack.workItems) for (const photo of item.handoverPhotos) rows.push(['handover_photo', item.itemReference, photo.publicId, photo.name, '', '', '', '', '', photo.mediaType, '', '', '', photo.description, photo.createdAt]);
+    res.type('text/csv').attachment(`${fileName}.csv`).send(rows.map((row) => row.map(quote).join(',')).join('\n'));
   } catch (error) { next(error); }
 });
 
@@ -699,7 +838,7 @@ router.put('/catalogue/consumables/:publicId', auth.requireAdmin, async (req, re
 });
 
 async function photoEntity(entityType, publicId, trx = db) {
-  const table = { rack: 'racks', device: 'devices', work_package: 'work_packages' }[entityType];
+  const table = { rack: 'racks', device: 'devices', work_package: 'work_packages', work_item: 'work_items' }[entityType];
   if (!table) throw httpError(415, 'photo_type_invalid', 'Photo entity type is invalid');
   const entity = await trx(table).where({ public_id: uuid(publicId, 'entityPublicId') }).first();
   if (!entity) throw httpError(404, 'photo_entity_not_found', 'Photo entity not found');
@@ -712,8 +851,9 @@ router.post('/photos/:entityType/:entityPublicId', auth.requireWrite, express.ra
     const publicId = id();
     const created = await db.transaction(async (trx) => {
       await photoEntity(req.params.entityType, req.params.entityPublicId, trx);
+      if (['work_package', 'work_item'].includes(req.params.entityType)) await assertEntityMutable(trx, req.params.entityType, req.params.entityPublicId);
       await trx('photos').where({ entity_type: req.params.entityType, entity_public_id: req.params.entityPublicId, is_current: true }).update({ is_current: false });
-      await trx('photos').insert({ public_id: publicId, entity_type: req.params.entityType, entity_public_id: req.params.entityPublicId, name: string(req.headers['x-photo-name'], 'x-photo-name', { required: true, max: 255 }), description: string(req.headers['x-photo-description'], 'x-photo-description', { max: 2000 }) || '', media_type: req.headers['content-type'], content: req.body, is_current: true });
+      await trx('photos').insert({ public_id: publicId, entity_type: req.params.entityType, entity_public_id: req.params.entityPublicId, name: string(decodedHeader(req.headers['x-photo-name']), 'x-photo-name', { required: true, max: 255 }), description: string(decodedHeader(req.headers['x-photo-description']), 'x-photo-description', { max: 2000 }) || '', media_type: req.headers['content-type'], content: req.body, is_current: true });
       await audit.record(trx, req.user.id, 'photo.create', req.params.entityType, req.params.entityPublicId, { photoId: publicId });
       return trx('photos').where({ public_id: publicId }).first();
     });
@@ -733,12 +873,30 @@ router.get('/photos/:entityType/:entityPublicId', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+router.put('/photos/:publicId', auth.requireWrite, async (req, res, next) => {
+  try {
+    knownKeys(req.body, ['name', 'description', '_baseVersion']); const requestedVersion = baseVersion(req.body);
+    const updated = await db.transaction(async (trx) => {
+      const photo = await trx('photos').where({ public_id: uuid(req.params.publicId, 'publicId') }).first();
+      if (!photo) throw httpError(404, 'photo_not_found', 'Photo not found');
+      if (['work_package', 'work_item'].includes(photo.entity_type)) await assertEntityMutable(trx, photo.entity_type, photo.entity_public_id);
+      const changes = { name: string(req.body.name, 'name', { required: true, max: 255 }), description: string(req.body.description, 'description', { max: 2000 }) || '', version: requestedVersion + 1 };
+      const count = await trx('photos').where({ id: photo.id, version: requestedVersion }).update(changes);
+      if (!count) { const error = httpError(409, 'version_conflict', 'The photo changed since it was loaded'); error.serverVersion = photo.version; throw error; }
+      await audit.record(trx, req.user.id, 'photo.update', photo.entity_type, photo.entity_public_id, { photoId: photo.public_id });
+      return trx('photos').where({ id: photo.id }).first();
+    });
+    res.json({ publicId: updated.public_id, name: updated.name, description: updated.description, mediaType: updated.media_type, current: Boolean(updated.is_current), version: updated.version, createdAt: updated.created_at });
+  } catch (error) { next(error); }
+});
+
 router.delete('/photos/:publicId', auth.requireWrite, async (req, res, next) => {
   try {
     const requestedVersion = integer(Number(req.query.baseVersion), 'baseVersion', { required: true, min: 0 });
     await db.transaction(async (trx) => {
       const photo = await trx('photos').where({ public_id: req.params.publicId }).first();
       if (!photo) throw httpError(404, 'photo_not_found', 'Photo not found');
+      if (['work_package', 'work_item'].includes(photo.entity_type)) await assertEntityMutable(trx, photo.entity_type, photo.entity_public_id);
       if (photo.version !== requestedVersion) {
         const conflict = httpError(409, 'version_conflict', 'The photo changed since it was loaded'); conflict.serverVersion = photo.version; throw conflict;
       }
