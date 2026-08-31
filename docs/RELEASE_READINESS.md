@@ -33,7 +33,7 @@ historical evidence; neither is a product-acceptance decision.
   `96f9c62d17eb7a82f09f816c83933700e69fdc3a`
 - Evidence baseline core version: `1.0.0-rc.1`
 - Evidence baseline Plugin API version: `1`
-- Current proposed core version: `1.1.0-rc.1`
+- Current proposed core version: `1.2.0-rc.1`
 - Current proposed Plugin API version: `2`
 - Outbound licence: Apache License, Version 2.0 (`Apache-2.0`)
 - Copyright holder: Copyright 2026 Sam Cowie
