@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { classification, replay } = require('../../public/js/offline');
 
 function memoryStore(initial = {}) {
-  const stores = new Map(Object.entries({ 'operation-queue': [], 'dead-letters': [], 'id-remaps': [], ...initial }));
+  const stores = new Map(Object.entries({ 'operation-queue': [], 'dead-letters': [], 'id-remaps': [], 'operation-completions': [], ...initial }));
   return {
     async all(name) { return [...stores.get(name)]; },
     async put(name, value) {
@@ -15,11 +15,19 @@ function memoryStore(initial = {}) {
     },
     async completeOperation(id, remap) {
       stores.set('operation-queue', stores.get('operation-queue').filter((entry) => entry.id !== id));
+      await this.put('operation-completions', { id, completedAt: Date.now() });
       if (remap) await this.put('id-remaps', remap);
+    },
+    async updateOperation(id, changes) {
+      if (stores.get('operation-completions').some((entry) => entry.id === id)) return;
+      const values = stores.get('operation-queue');
+      const index = values.findIndex((entry) => entry.id === id);
+      if (index !== -1) values[index] = { ...values[index], ...changes };
     },
     async rejectOperation(operation, rejection) {
       stores.set('operation-queue', stores.get('operation-queue').filter((entry) => entry.id !== operation.id));
       await this.put('dead-letters', { ...operation, ...rejection });
+      await this.put('operation-completions', { id: operation.id, completedAt: Date.now() });
     }
   };
 }
@@ -72,4 +80,27 @@ test('permanent rejection becomes recoverable dead letters and rejects dependant
   assert.equal(result.state, 'complete'); assert.equal(calls, 1);
   assert.equal((await store.all('operation-queue')).length, 0);
   assert.deepEqual((await store.all('dead-letters')).map((entry) => [entry.id, entry.status, entry.reason]), [['a', 422, 'server_rejected'], ['b', 424, 'dependency_rejected']]);
+});
+
+test('optimistic conflicts retain scoped server details with the rejected draft', async () => {
+  const draft = operation('site-edit', { path: '/sites/fictional-site', method: 'PUT', body: JSON.stringify({ name: 'Retained local draft', _baseVersion: 2 }), operationKey: 'site:update:fictional-site', entityType: 'site', entityPublicId: 'fictional-site' });
+  const store = memoryStore({ 'operation-queue': [draft] });
+  const result = await replay(store, async () => response(409, { code: 'version_conflict', error: 'The site changed since it was loaded', serverVersion: 3 }), () => 40);
+  assert.equal(result.state, 'complete');
+  assert.equal((await store.all('operation-queue')).length, 0);
+  const [rejected] = await store.all('dead-letters');
+  assert.equal(rejected.reason, 'version_conflict');
+  assert.equal(rejected.serverCode, 'version_conflict');
+  assert.equal(rejected.serverVersion, 3);
+  assert.match(rejected.body, /Retained local draft/);
+});
+
+test('concurrent replay requests serialize and send each operation once', async () => {
+  const store = memoryStore({ 'operation-queue': [operation('serialized')] });
+  let calls = 0;
+  const request = async () => { calls += 1; await new Promise((resolve) => setImmediate(resolve)); return response(200); };
+  const results = await Promise.all([replay(store, request), replay(store, request)]);
+  assert.deepEqual(results.map((result) => result.state), ['complete', 'complete']);
+  assert.equal(calls, 1);
+  assert.equal((await store.all('operation-queue')).length, 0);
 });

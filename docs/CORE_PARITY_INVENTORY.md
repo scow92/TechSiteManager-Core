@@ -62,7 +62,7 @@ copy into the public repository.
 | --- | --- |
 | U1 | `public/index.html`; `public/js/main.js` — native-module shell, hash routing, context selectors and theme. |
 | U2 | `public/js/views/home.js` — site/package search, creation and active/completed lists. |
-| U3 | `public/js/views/sites.js` — site creation plus read-only infrastructure lists and rack previews. |
+| U3 | `public/js/views/sites.js`; `public/js/views/infrastructure.js` — site editing/conflict recovery plus room, rack/elevation, photo, ODF, device and distance workflows with explicit role and offline states. |
 | U4 | `public/js/views/work-package.js` — explicit package save and generic child/circuit/requirement creation. |
 | U5 | `public/js/presentation.js` — core-owned record, child-tab, connection-table, requirement and material renderers. |
 | U6 | `public/js/views/import.js`; `public/js/import/descriptors.js`; `public/js/import/reconciliation.js` — provider inputs, preview, decisions and apply. |
@@ -74,6 +74,7 @@ copy into the public repository.
 | A5 | `server/app.js`; `server/server.js` — security middleware, readiness and graceful signal handling. |
 | D1 | `server/db/migrations/0001_generic_baseline.js` — generic users, infrastructure, packages, children, materials, distances, photos, imports and audit. |
 | D2 | `server/db/migrations/0002_plugin_api_v2_extensions.js` — plugin-scoped typed extension values. |
+| D3 | `server/db/migrations/0003_phase2_infrastructure.js` — rack confirmation, ODF positions, canonical device locations, structured distance pairs and current photo history. |
 | O1 | `public/js/api.js`; `public/js/idb.js`; `public/js/offline.js`; `public/js/offline-ui.js` — cached reads, durable operation/dead-letter stores, FIFO replay, ID remaps and pending logout. |
 | O2 | `public/sw.js`; `public/manifest.json` — versioned shell caching and install metadata. |
 | R1 | `server/lib/backup.js`; `server/scripts/backup.js`; `server/scripts/restore.js`; `docs/BACKUP_AND_RESTORE.md` — SQLite-safe backup and isolated restore. |
@@ -87,19 +88,19 @@ group.
 
 | ID | Current automated evidence |
 | --- | --- |
-| T1 | `server/test/core-routes.test.js` — `generic site, room, rack, termination point, device, distance, and catalogue APIs work`; `generic infrastructure and catalogue updates use optimistic concurrency`. |
+| T1 | `server/test/core-routes.test.js` — generic infrastructure/concurrency cases plus `Phase 2 infrastructure workflows validate placement, relationships, history, and photo lifecycle`. |
 | T2 | `server/test/core-routes.test.js` — `generic work package persists nested records and is searchable without plugins`; `optimistic concurrency requires a base version and rejects stale writes`; `generic work-item, circuit, segment, and requirement mutations preserve stable IDs and concurrency`. |
 | T3 | `server/test/core-routes.test.js` — `zero-plugin all-record search finds generic infrastructure`; `generic JSON and CSV exports are available without plugins and neutralize formula cells`; `photo metadata listing does not return image bytes`. |
 | T4 | `server/test/core-routes.test.js` — `setup, authentication, role authorization, and session revocation work`; `writer roles can mutate core records but administrator boundaries remain enforced`; `user administration is concurrent, audited, and preserves an active administrator`. |
 | T5 | `server/test/core-routes.test.js` — `origin checks, security headers, and public errors do not leak internals`; `generic mutations create sanitized audit events`. |
-| T6 | `server/test/offline-replay.test.js` — `FIFO replay durably remaps a temporary identity for dependent operations`; transient/unclassified retention; recoverable dead letters. |
-| T7 | `server/test/browser-contracts.test.js` — exact shell coverage, network-first same-origin behavior, separated durable stores and logout-before-restore. |
+| T6 | `server/test/offline-replay.test.js` — FIFO identity remapping, transient/unclassified retention, recoverable dead letters, scoped optimistic-conflict details and serialized replay. |
+| T7 | `server/test/browser-contracts.test.js` — exact shell coverage, network-first same-origin behavior, separated durable stores with completion guards, and logout-before-restore. |
 | T8 | `server/test/e2e.playwright.js` — `PASS zero-plugin browser flow`; `PASS fictional-plugin import, navigation, reload and zero-plugin restart flow`. |
 | T9 | `server/test/import-service.test.js` — atomic fictional import, no raw-source retention, idempotence, stable reordering, ownership conflicts, recoverable absence, stale/cancelled rejection and rollback. |
 | T10 | `server/test/plugin-loader.test.js`; `server/test/plugin-modules.test.js`; `server/test/presentation-values.test.js` — zero-plugin startup, bounded contributions, presentation validation and typed extension concurrency. |
-| T11 | `server/test/recovery.test.js` — `fresh generic baseline installs with integrity and no legacy migration history`; `SQLite-safe backup and restore preserve generic records and provenance`; overwrite/live-directory refusal. |
+| T11 | `server/test/recovery.test.js` — fresh migration integrity/constraints/down-up plus backup/restore preservation of ODF positions, structured distances, photos and provenance. |
 | T12 | `server/test/visual-parity.playwright.js` — desktop route captures and the home/package-details dark/light matrix at desktop, tablet portrait/landscape and phone portrait/landscape sizes. |
-| T13 | `server/test/site-workflow.contract.js` — isolated, intentionally failing fictional browser contracts for site edit persistence, stale-edit conflict retention, and explicit viewer read-only behavior. Run with `npm run test:contract:site`; it remains outside the green release suite until `CORE-SITE-01` implements the workflow. |
+| T13 | `server/test/site-workflow.contract.js` — seven passing fictional browser contracts covering site conflicts/replay and complete Phase 2 infrastructure interactions, viewer state and offline rack identity replay. Run with `npm run test:contract:site`. |
 
 ## Workflow matrix
 
@@ -108,13 +109,13 @@ group.
 | ID | Frozen workflow | Frozen evidence | UI | API | Persistence | Offline | Automated tests | Overall and missing behavior |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | W01 | Home, hierarchical navigation, context and reload resumption | G1, G17 | **partial** — U1, U2 provide navigation and selectors but do not restore same-user view/scroll state | **partial** — A1 supplies lists/search; there is no resumption contract | **partial** — D1 stores records/sessions, not browser context | **partial** — O2 reloads the shell and cached GETs can reopen data | **partial** — T8 reloads selected pages; T12 covers only home/details responsively | **partial** — navigation works, but durable same-user context and viewport resumption are absent. |
-| W02 | Site create, read, update and search with role/conflict behavior | G2 | **partial** — U2/U3 create, list, search and open; no edit/conflict UI | **verified** — A1 provides list/create/update/search, write authorization and optimistic version checks | **verified** — D1 has canonical sites, unique codes and versions | **partial** — U3 queues creation only; update/conflict replay is absent | **partial** — T1/T4 cover APIs and roles; T8 covers create/reload; T13 is intentionally red for browser edit persistence, conflicts and viewer state | **partial** — complete API foundation, incomplete browser and offline workflow. |
-| W03 | Room-owned canonical racks, default height, suite-line confirmation, duplicates and edit | G3 | **partial** — U3 displays rooms/racks and front previews; it cannot add or edit them | **partial** — A1 creates/updates rooms/racks with room ownership and default `47U`; no delete, inference/confirmation, duplicate/merge workflow | **partial** — D1 stores rooms, suite line, height and layouts | **missing** — no room/rack browser mutation is queueable | **partial** — T1 verifies generic create/update/concurrency; T12 is visual-only | **partial** — the data/API skeleton is not a usable canonical-rack workflow. |
-| W04 | Front/rear rack elevation device add, move, resize and remove with stable identity | G3 | **missing** — U3 renders a read-only front preview and filters rear devices out | **partial** — A1 can create/update positioned devices but has no remove or layout interaction contract | **partial** — D1 stores side, U position, size and stable `device_key`; layout JSON is not exposed by the route | **missing** — no elevation operation is queued | **partial** — T1 seeds one device; T12 captures a static front elevation | **partial** — stable fields exist, but the elevation editor is missing. |
-| W05 | Rack and per-device photo upload, current/history view, replacement and deletion | G4 | **missing** — there is no photo UI | **partial** — A1 uploads/lists/reads rack/device photos with type/size bounds; no delete, replacement/current semantics or device-key lifecycle | **partial** — D1 stores generic photo bytes/metadata but not immutable current/history relationships | **missing** — uploads and deletes have no queue policy | **partial** — T3 exercises only package upload/list/content and an orphan rejection | **partial** — a generic photo service exists without the frozen lifecycle. |
-| W06 | ODF/termination create, edit, delete and tray/fibre relationship validation | G5 | **missing** — U3 is a read-only list | **partial** — A1 creates/updates a generic termination point; no delete, trays, fibre positions or schedule relationship validation | **partial** — D1 stores label/kind/notes/room only | **missing** — no termination mutation is queueable | **partial** — T1 covers generic create/update only | **partial** — generic records exist; schedule-usable ODF behavior does not. |
-| W07 | Site device directory and canonical lowercase hostname/location reuse | G6 | **partial** — U3 lists devices but cannot maintain or reconcile them | **partial** — A1 lowercases create/update and binds a rack; schedules still use untyped endpoint text | **partial** — D1 enforces lowercase hostnames and stable keys but does not unify schedule endpoint identity | **missing** — device mutations are not queueable | **partial** — T1 covers generic device creation; T11 checks the lowercase database constraint | **partial** — canonical casing exists, cross-workflow identity does not. |
-| W08 | Distance history, exact/rack fallback, suggestions and interactive calculator | G7 | **partial** — U3 lists samples only | **partial** — A1 appends/lists samples; no lookup, fallback, suggestion or calculator endpoint | **partial** — D1 stores endpoint pair, media, length and time without structured room/rack context | **missing** — no distance operation or cached suggestion policy | **partial** — T1 verifies append only | **partial** — history storage exists; the distance engine is missing. |
+| W02 | Site create, read, update and search with role/conflict behavior | G2 | **verified** — U2/U3 create, list, search, open and edit sites; writers receive retained conflict resolution and viewers receive explicit read-only state | **verified** — A1 provides validated list/create/update/search, write authorization, optimistic versions, scoped server-version errors and exact idempotent retry | **verified** — D1 has canonical sites, unique codes and versions; successful writes and audits are transactional | **verified** — O1/U3 cache local site drafts, coalesce durable updates, serialize replay, guard completed operations and retain scoped conflicts for review/discard/reapply | **verified** — T1/T4 cover APIs, authorization and idempotent/divergent concurrency; T8 covers create/reload/search; T13 passes all five online/offline browser cases | **verified** — the zero-plugin site workflow is complete across browser, roles, persistence, conflicts, search and applicable offline recovery. |
+| W03 | Room-owned canonical racks, default height, suite-line confirmation, duplicates and edit | G3 | **verified** — U3 provides room/rack create, edit, guarded delete, suite inference/confirmation and duplicate feedback | **verified** — A1 validates ownership, 47U default, case-insensitive room-scoped duplicates, versions and safe deletes | **verified** — D1/D3 store ownership, confirmation, bounds and versions with preserved database guards | **verified** — O1/U3 queue dependent room/rack writes, remap temporary IDs and expose retained conflicts | **verified** — T1/T13 cover defaults, duplicates, edit, roles, replay and no self-dependency | **verified** — the canonical room/rack workflow is usable and recoverable without plugins. |
+| W04 | Front/rear rack elevation device add, move, resize and remove with stable identity | G3 | **verified** — U3 renders both faces and supports add, move, resize and remove | **verified** — A1 enforces rack bounds, face-specific collisions, safe deletion and immutable keys | **verified** — D1/D3 preserve device keys, room/rack location, face, U position, size and versions | **verified** — O1/U3 durably queue device operations and dependent temporary rack references | **verified** — T1/T13 cover overlap rejection, both faces, move/resize/remove and stable identity | **verified** — the zero-plugin rack elevation editor preserves canonical device identity. |
+| W05 | Rack and per-device photo upload, current/history view, replacement and deletion | G4 | **verified** — U3 provides rack/device galleries, metadata, current/history, replacement and writer-only deletion | **verified** — A1 enforces entity/type/size/role bounds, current promotion, content retrieval and optimistic delete | **verified** — D1/D3 retain bytes, metadata, history/current state and versions; R1/T11 preserve them | **verified** — binary writes are explicitly online-only and failures remain visible; metadata/content use authenticated cached reads where available | **verified** — T1/T11/T13 cover rack and device lifecycle, viewer denial, type/size bounds and restore | **verified** — rack and per-device photo history is complete within the documented online-only binary policy. |
+| W06 | ODF/termination create, edit, delete and tray/fibre relationship validation | G5 | **verified** — U3 provides termination-point and tray/position create, edit and delete | **verified** — A1 validates room ownership, capacity, unique coordinates, version conflicts and guarded capacity reduction | **verified** — D1/D3 store capacities/positions with foreign keys, uniqueness and capacity triggers | **partial** — termination-point writes queue, while position writes remain online-only pending CORE-OFFLINE-01 | **verified** — T1/T11/T13 cover position creation/edit, duplicate/capacity rejection and recovery | **partial** — the canonical ODF workflow is complete for online schedules; position replay remains an offline acceptance item. |
+| W07 | Site device directory and canonical lowercase hostname/location reuse | G6 | **verified** — U3 maintains canonical devices and exposes lowercased site hostnames to generic schedule inputs | **partial** — A1 validates canonical device locations, but schedule segments retain untyped endpoint text until CORE-CABLE-03 | **partial** — D1/D3 preserve canonical devices but do not yet bind segment endpoint identity | **verified** — O1/U3 queue device creates, moves, resizes and deletes with remapping/conflict states | **verified** — T1/T13 cover lowercase hostnames, locations, stable keys, roles and browser reuse | **partial** — the directory and rack reuse are complete; typed schedule identity remains in Phase 4. |
+| W08 | Distance history, exact/rack fallback, suggestions and interactive calculator | G7 | **verified** — U3 provides device-pair measurement history and interactive suggestions | **verified** — A1 supplies media-scoped exact and rack-pair fallback lookup with bounded measurements | **verified** — D1/D3 store structured device/rack references, media, length and observation time | **verified** — O1/U3 queue measurements with dependent IDs and cache read suggestions | **verified** — T1/T13 cover exact history, rack fallback, recording and calculator output | **verified** — the equipment-pair distance engine is usable without plugins. |
 
 ### Work packages and records
 
@@ -164,20 +165,21 @@ group.
 
 ## Acceptance-flow roll-up
 
-No critical acceptance flow is verified end to end. This roll-up maps every
-flow in the recovery guide to the detailed rows above; it does not replace the
-layer evidence.
+One critical acceptance flow now has verified implementation evidence at this
+inventory scope. This roll-up maps every flow in the recovery guide to the
+detailed rows above; it does not replace final acceptance or authorize checking
+the guide's `FLOW-*` box before its broader role, viewport and release gates.
 
 | Acceptance flow | Inventory rows | Status | Principal blockers |
 | --- | --- | --- | --- |
 | `FLOW-01` Home, search, navigation and resumption | W01, W14, W27 | **partial** | Exact search behavior and same-user route/scroll resumption. |
-| `FLOW-02` Site, room, rack, ODF and device editing | W02, W03, W06, W07 | **partial** | Infrastructure browser create/edit/delete and full relationships. |
-| `FLOW-03` Rack elevation editing and identity | W04 | **partial** | Usable front/rear editor and remove/move/resize behavior. |
-| `FLOW-04` Rack, device and handover photos | W05, W12 | **partial** | Browser galleries, current/history rules, edit/delete and recovery evidence. |
+| `FLOW-02` Site, room, rack, ODF and device editing | W02, W03, W06, W07 | **partial** | Typed schedule endpoint identity and full infrastructure-position replay remain. |
+| `FLOW-03` Rack elevation editing and identity | W04 | **verified** | Lower-level workflow verified; final product acceptance still requires the guide's broader role/viewport gates. |
+| `FLOW-04` Rack, device and handover photos | W05, W12 | **partial** | Rack/device lifecycle is verified; package/work-item handover remains. |
 | `FLOW-05` Package details, assignments, work items and completion | W09–W13 | **partial** | Transactional editor, work-item workflow, handover and admin completion locks. |
 | `FLOW-06` Fibre schedule and ODF hops | W16–W20, W23 | **missing** | Typed endpoints, ODF chains and fibre-specific grid behavior. |
 | `FLOW-07` Copper and DAC schedules | W16, W17, W21–W23 | **missing** | Media-specific fields, row semantics and acceptance states. |
-| `FLOW-08` Schedule-driven racks and distances | W08, W19 | **missing** | Transactional rack correction/autofill and distance matching. |
+| `FLOW-08` Schedule-driven racks and distances | W08, W19 | **missing** | Distance matching is verified; transactional schedule rack correction/autofill remains missing. |
 | `FLOW-09` Consumables, fibre catalogue, BOM and exports | W15, W24, W25 | **missing** | Catalogue UI, complete export and the entire fibre SKU/BOM workflow. |
 | `FLOW-10` Imports, reconciliation, retry, provenance, search and export | W14, W15, W29, W30 | **partial** | Approved provider differential evidence and online-only behavior. |
 | `FLOW-11` Roles, approval, workload, concurrency, locks and safe errors | W13, W26, W31 | **partial** | Account lifecycle/workload UI and completion/conflict behavior. |
@@ -187,9 +189,9 @@ layer evidence.
 
 ## Size and recovery order
 
-The 34 detailed workflows contain **6 missing**, **28 partial**, and **0
-verified** end-to-end outcomes. Verified lower layers are useful prerequisites,
-not parity claims.
+The 34 detailed workflows contain **6 missing**, **23 partial**, and **5
+verified** end-to-end outcomes. Verified lower layers remain useful
+prerequisites, not parity claims for the other workflows.
 
 The evidence supports the existing recovery order:
 

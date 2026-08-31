@@ -25,9 +25,9 @@ test('fresh generic baseline installs with integrity and no legacy migration his
   assert.equal((await db.raw('PRAGMA integrity_check'))[0].integrity_check, 'ok');
   assert.deepEqual(await db.raw('PRAGMA foreign_key_check'), []);
   const migrations = await db('knex_migrations').select('name');
-  assert.deepEqual(migrations.map((row) => row.name), ['0001_generic_baseline.js', '0002_plugin_api_v2_extensions.js']);
+  assert.deepEqual(migrations.map((row) => row.name), ['0001_generic_baseline.js', '0002_plugin_api_v2_extensions.js', '0003_phase2_infrastructure.js']);
   const tables = (await db.raw("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).map((row) => row.name);
-  for (const expected of ['sites', 'rooms', 'racks', 'termination_points', 'devices', 'work_packages', 'work_items', 'circuits', 'segments', 'extension_values', 'import_sources', 'import_runs', 'import_entity_links', 'import_field_ownership', 'import_drafts']) assert.ok(tables.includes(expected));
+  for (const expected of ['sites', 'rooms', 'racks', 'termination_points', 'termination_positions', 'devices', 'distance_samples', 'photos', 'work_packages', 'work_items', 'circuits', 'segments', 'extension_values', 'import_sources', 'import_runs', 'import_entity_links', 'import_field_ownership', 'import_drafts']) assert.ok(tables.includes(expected));
 });
 
 test('database constraints defend roles, statuses, quantities, and foreign keys', async () => {
@@ -46,6 +46,17 @@ test('database constraints defend roles, statuses, quantities, and foreign keys'
 
 test('SQLite-safe backup and restore preserve generic records and provenance', async () => {
   const site = await db('sites').where({ code: 'REC-01' }).first();
+  const [roomId] = await db('rooms').insert({ public_id: crypto.randomUUID(), site_id: site.id, name: 'Fictional Recovery Room' });
+  const rackPublicId = crypto.randomUUID();
+  const [rackId] = await db('racks').insert({ public_id: rackPublicId, site_id: site.id, room_id: roomId, label: 'REC-RACK-A1', suite_line: 'A', suite_line_confirmed: true, size_units: 47 });
+  const firstDevicePublicId = crypto.randomUUID(); const secondDevicePublicId = crypto.randomUUID();
+  const [firstDeviceId] = await db('devices').insert({ public_id: firstDevicePublicId, site_id: site.id, room_id: roomId, rack_id: rackId, hostname: 'recovery-device-a', device_key: crypto.randomUUID(), rack_unit: 10, side: 'front' });
+  const [secondDeviceId] = await db('devices').insert({ public_id: secondDevicePublicId, site_id: site.id, room_id: roomId, rack_id: rackId, hostname: 'recovery-device-b', device_key: crypto.randomUUID(), rack_unit: 20, side: 'front' });
+  const [pointId] = await db('termination_points').insert({ public_id: crypto.randomUUID(), site_id: site.id, room_id: roomId, label: 'REC-ODF-01', kind: 'odf', tray_count: 2, positions_per_tray: 12 });
+  await db('termination_positions').insert({ public_id: crypto.randomUUID(), termination_point_id: pointId, tray: 2, position: 4, label: 'Fictional fibre 4' });
+  await db('distance_samples').insert({ public_id: crypto.randomUUID(), site_id: site.id, endpoint_a: 'recovery-device-a', endpoint_b: 'recovery-device-b', endpoint_a_device_id: firstDeviceId, endpoint_b_device_id: secondDeviceId, endpoint_a_rack_id: rackId, endpoint_b_rack_id: rackId, media: 'fibre', length_metres: 14.5 });
+  const photoBytes = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+  await db('photos').insert({ public_id: crypto.randomUUID(), entity_type: 'rack', entity_public_id: rackPublicId, name: 'Fictional recovery rack', media_type: 'image/jpeg', content: photoBytes, is_current: true });
   const [userId] = await db('users').insert({ public_id: crypto.randomUUID(), username: 'recovery-admin', password_hash: 'test', role: 'admin', display_name: 'Recovery Admin', active: 1 });
   const [packageId] = await db('work_packages').insert({ public_id: crypto.randomUUID(), site_id: site.id, package_ref: 'PKG-RECOVERY-1', external_reference: 'EXT-RECOVERY-1', title: 'Recovery fixture', status: 'active' });
   const [sourceId] = await db('import_sources').insert({ public_id: crypto.randomUUID(), provider_id: 'example.recovery.provider', external_source_id: 'recovery-source-1', connector_id: 'core.file', first_seen_at: new Date().toISOString(), last_seen_at: new Date().toISOString() });
@@ -60,6 +71,9 @@ test('SQLite-safe backup and restore preserve generic records and provenance', a
   try {
     assert.equal((await restoredDb('work_packages').where({ package_ref: 'PKG-RECOVERY-1' }).first()).title, 'Recovery fixture');
     assert.equal((await restoredDb('import_entity_links').count({ count: '*' }).first()).count, 1);
+    assert.equal((await restoredDb('termination_positions').where({ termination_point_id: pointId }).first()).label, 'Fictional fibre 4');
+    assert.equal(Number((await restoredDb('distance_samples').where({ endpoint_a_device_id: firstDeviceId }).first()).length_metres), 14.5);
+    assert.deepEqual((await restoredDb('photos').where({ entity_public_id: rackPublicId }).first()).content, photoBytes);
     assert.deepEqual(await restoredDb.raw('PRAGMA foreign_key_check'), []);
   } finally { await restoredDb.destroy(); }
 });

@@ -1,6 +1,6 @@
 export interface User { readonly publicId: string; readonly username: string; readonly displayName: string; readonly email: string | null; readonly role: 'admin' | 'manager' | 'engineer' | 'viewer'; readonly active: boolean; readonly version: number; }
 export interface AuthStatus { readonly user: User | null; readonly setupNeeded: boolean; }
-export interface Site { readonly publicId: string; readonly code: string; readonly name: string; readonly description: string; }
+export interface Site { readonly publicId: string; readonly code: string; readonly name: string; readonly description: string; readonly version: number; }
 export interface ExporterDescriptor { readonly id: string; readonly label: string; }
 export interface PresentationField { readonly id: string; readonly entityType: 'work-package' | 'work-item' | 'circuit' | 'segment' | 'consumable-requirement'; readonly binding: string; readonly label: string; readonly type: 'string' | 'multiline' | 'date' | 'integer' | 'decimal' | 'boolean' | 'enum'; readonly required: boolean; readonly wide: boolean; readonly maxLength: number; readonly options: readonly string[]; }
 export interface PresentationSection { readonly id: string; readonly label: string; readonly hint: string; readonly fields: readonly string[]; }
@@ -10,6 +10,7 @@ export interface WorkPackageSummary { readonly publicId: string; readonly packag
 export interface SearchRecord extends Partial<WorkPackageSummary> { readonly entityType?: 'work_package' | 'site' | 'room' | 'rack' | 'termination_point' | 'device' | 'distance'; readonly reference?: string; readonly description?: string; }
 export interface SiteRecord {
   readonly publicId: string;
+  readonly version: number;
   readonly name?: string;
   readonly description?: string;
   readonly label?: string;
@@ -19,10 +20,25 @@ export interface SiteRecord {
   readonly roomPublicId?: string | null;
   readonly rackPublicId?: string | null;
   readonly suiteLine?: string;
+  readonly suiteLineConfirmed?: boolean;
   readonly sizeUnits?: number;
   readonly rackUnit?: number | null;
   readonly side?: string;
+  readonly deviceKey?: string;
+  readonly kind?: string;
+  readonly notes?: string;
+  readonly trayCount?: number;
+  readonly positionsPerTray?: number;
+  readonly endpointADevicePublicId?: string | null;
+  readonly endpointBDevicePublicId?: string | null;
+  readonly endpointARackPublicId?: string | null;
+  readonly endpointBRackPublicId?: string | null;
+  readonly media?: string;
+  readonly lengthMetres?: number;
+  readonly observedAt?: string;
 }
+export interface TerminationPosition { readonly publicId: string; readonly tray: number; readonly position: number; readonly label: string; readonly version: number; }
+export interface PhotoRecord { readonly publicId: string; readonly name: string; readonly description: string; readonly mediaType: string; readonly current: boolean; readonly version: number; readonly createdAt: string; }
 export type ExtensionValues = Readonly<Record<string, { readonly value: unknown; readonly version: number }>>;
 export interface WorkItem { readonly publicId: string; readonly itemReference: string; readonly title: string; readonly description: string; readonly status: string; readonly sequence: number; readonly version: number; readonly extensions: ExtensionValues; }
 export interface Segment { readonly publicId: string; readonly segmentReference: string; readonly sequence: number; readonly fromEndpoint: string; readonly toEndpoint: string; readonly lengthMetres: number | null; readonly notes: string; readonly version: number; readonly extensions: ExtensionValues; }

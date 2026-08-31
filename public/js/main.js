@@ -168,7 +168,7 @@ async function render() {
   userSummary.textContent = `${user.displayName || user.username} · ${user.role}`;
   const [kind, rawId, section] = route.split('/');
   if (route === 'sites') await sitesView(user);
-  else if (kind === 'site' && rawId) await siteView(decodeURIComponent(rawId), section || 'overview');
+  else if (kind === 'site' && rawId) await siteView(decodeURIComponent(rawId), user, section || 'overview');
   else if (kind === 'package' && rawId) await packageView(decodeURIComponent(rawId), user, section || 'details');
   else if (kind === 'import') await importView(rawId ? decodeURIComponent(rawId) : undefined);
   else if (route === 'settings') await settingsView(user, cycleTheme);

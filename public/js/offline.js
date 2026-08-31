@@ -23,7 +23,14 @@
     } catch { return null; }
   }
 
-  async function replay(store, fetchImpl, now = Date.now) {
+  async function responseError(response) {
+    try {
+      const body = await response.clone().json();
+      return body && typeof body === 'object' ? body : {};
+    } catch { return {}; }
+  }
+
+  async function replayOnce(store, fetchImpl, now = Date.now) {
     const operations = (await store.all('operation-queue')).sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
     const active = new Set(operations.map((operation) => operation.id));
     const rejected = new Set((await store.all('dead-letters')).map((operation) => operation.id));
@@ -47,7 +54,7 @@
           credentials: 'same-origin'
         });
       } catch {
-        await store.put('operation-queue', { ...operation, attempts: operation.attempts + 1, lastAttemptAt: now() });
+        await store.updateOperation(operation.id, { attempts: operation.attempts + 1, lastAttemptAt: now() });
         return { state: 'offline', operationId: operation.id };
       }
 
@@ -56,7 +63,7 @@
         if (operation.temporaryId) {
           const publicId = await responsePublicId(response);
           if (!publicId) {
-            await store.put('operation-queue', { ...operation, attempts: operation.attempts + 1, lastAttemptAt: now() });
+            await store.updateOperation(operation.id, { attempts: operation.attempts + 1, lastAttemptAt: now() });
             return { state: 'unclassified', operationId: operation.id };
           }
           remap = { temporaryId: operation.temporaryId, publicId, operationId: operation.id, mappedAt: now() };
@@ -69,14 +76,29 @@
 
       const kind = classification(response.status);
       if (kind === 'permanent') {
-        await store.rejectOperation(operation, { rejectedAt: now(), status: response.status, reason: 'server_rejected' });
+        const details = await responseError(response);
+        const serverCode = typeof details.code === 'string' ? details.code : null;
+        await store.rejectOperation(operation, {
+          rejectedAt: now(), status: response.status,
+          reason: serverCode === 'version_conflict' ? 'version_conflict' : 'server_rejected',
+          serverCode,
+          serverMessage: typeof details.error === 'string' ? details.error : null,
+          serverVersion: Number.isInteger(details.serverVersion) ? details.serverVersion : null
+        });
         active.delete(operation.id); rejected.add(operation.id);
         continue;
       }
-      await store.put('operation-queue', { ...operation, attempts: operation.attempts + 1, lastAttemptAt: now(), lastStatus: response.status });
+      await store.updateOperation(operation.id, { attempts: operation.attempts + 1, lastAttemptAt: now(), lastStatus: response.status });
       return { state: kind, operationId: operation.id };
     }
     return { state: 'complete' };
+  }
+
+  let replayTail = Promise.resolve();
+  function replay(store, fetchImpl, now = Date.now) {
+    const result = replayTail.then(() => replayOnce(store, fetchImpl, now));
+    replayTail = result.catch(() => undefined);
+    return result;
   }
 
   const contract = Object.freeze({ classification, replay });

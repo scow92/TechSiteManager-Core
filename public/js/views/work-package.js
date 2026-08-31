@@ -6,6 +6,7 @@ import { renderPresentation } from '../presentation.js';
 /** @typedef {import('../../../server/types/browser-models').WorkPackage} WorkPackage */
 /** @typedef {import('../../../server/types/browser-models').ExporterDescriptor} ExporterDescriptor */
 /** @typedef {import('../../../server/types/browser-models').PresentationProfile} PresentationProfile */
+/** @typedef {import('../../../server/types/browser-models').SiteRecord} SiteRecord */
 
 /** @param {string} title @param {string} hint @param {...Node} children */
 function detailSection(title, hint, ...children) {
@@ -131,8 +132,12 @@ export async function packageView(publicId, user, section = 'details') {
     /** @type {Promise<PresentationProfile | null>} */ (api('/presentation-profiles/work-package'))
   ]);
   const rerender = () => packageView(publicId, user, section);
+  const siteDevices = /** @type {SiteRecord[]} */ (await api(`/sites/${encodeURIComponent(pack.site.publicId)}/devices`));
   const selectedView = presentation && (presentation.views.find((view) => view.id === section) || presentation.views[0]);
   const content = presentation && selectedView ? renderPresentation(presentation, selectedView, pack, user, rerender) : section === 'work-items' ? workItemsView(pack, user, rerender) : section === 'connections' ? connectionsView(pack, user, rerender) : section === 'consumables' ? consumablesView(pack, user, rerender) : detailsView(pack, user, rerender);
+  const deviceListId = 'canonical-site-devices';
+  for (const control of content.querySelectorAll('input[name="fromEndpoint"], input[name="toEndpoint"]')) control.setAttribute('list', deviceListId);
+  content.append(el('datalist', { id: deviceListId }, ...siteDevices.map((device) => el('option', { value: device.hostname || '', label: device.rackPublicId ? `Rack device · ${device.label || device.hostname}` : `Site device · ${device.label || device.hostname}` }))));
   const exports = el('div', { class: 'page-actions' }, el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(pack.publicId)}/export?format=json` }, 'JSON'), el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(pack.publicId)}/export?format=csv` }, 'CSV'), ...exporters.map((exporter) => el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(pack.publicId)}/plugin-exports/${encodeURIComponent(exporter.id)}` }, exporter.label)));
   app.replaceChildren(el('section', { class: 'view stack' }, el('p', { class: 'breadcrumb' }, el('a', { href: '#home' }, 'Home'), ' / ', pack.packageReference), pageHead(pack.packageReference, selectedView?.description || pack.title, el('span', { class: 'badge', 'data-status': pack.status }, pack.status), exports), content));
 }

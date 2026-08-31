@@ -145,6 +145,15 @@ test('generic site, room, rack, termination point, device, distance, and catalog
 });
 
 test('generic infrastructure and catalogue updates use optimistic concurrency', async () => {
+  const siteBody = { code: site.code, name: 'Updated Fictional Route Lab', description: site.description, _baseVersion: site.version };
+  const siteWinner = await request(`/api/sites/${site.publicId}`, { method: 'PUT', body: siteBody });
+  assert.equal(siteWinner.response.status, 200); assert.equal(siteWinner.data.version, site.version + 1);
+  const siteRetry = await request(`/api/sites/${site.publicId}`, { method: 'PUT', body: siteBody });
+  assert.equal(siteRetry.response.status, 200); assert.equal(siteRetry.data.version, siteWinner.data.version);
+  const siteStale = await request(`/api/sites/${site.publicId}`, { method: 'PUT', body: { ...siteBody, description: 'Divergent stale site edit' } });
+  assert.equal(siteStale.response.status, 409); assert.equal(siteStale.data.code, 'version_conflict'); assert.equal(siteStale.data.serverVersion, siteWinner.data.version);
+  site = siteWinner.data;
+
   const body = { label: rack.label, suiteLine: 'B', sizeUnits: rack.sizeUnits, roomPublicId: room.publicId, _baseVersion: rack.version };
   const winner = await request(`/api/sites/${site.publicId}/racks/${rack.publicId}`, { method: 'PUT', body });
   assert.equal(winner.response.status, 200); assert.equal(winner.data.suiteLine, 'B');
@@ -155,6 +164,70 @@ test('generic infrastructure and catalogue updates use optimistic concurrency', 
   const catalogueWinner = await request(`/api/catalogue/consumables/${catalogue.publicId}`, { method: 'PUT', body: catalogueBody });
   assert.equal(catalogueWinner.response.status, 200); assert.equal(Number(catalogueWinner.data.estimatedUnitPrice), 0.5);
   assert.equal((await request(`/api/catalogue/consumables/${catalogue.publicId}`, { method: 'PUT', body: catalogueBody })).response.status, 409);
+});
+
+test('Phase 2 infrastructure workflows validate placement, relationships, history, and photo lifecycle', async () => {
+  const phaseSite = (await request('/api/sites', { method: 'POST', body: { code: 'LAB-PHASE-02', name: 'Fictional Phase Two Lab' } })).data;
+  const firstRoom = (await request(`/api/sites/${phaseSite.publicId}/rooms`, { method: 'POST', body: { name: 'Fictional Suite One', description: '' } })).data;
+  const secondRoom = (await request(`/api/sites/${phaseSite.publicId}/rooms`, { method: 'POST', body: { name: 'Fictional Suite Two', description: '' } })).data;
+  const firstRackResponse = await request(`/api/sites/${phaseSite.publicId}/racks`, { method: 'POST', body: { label: 'ROW-A-01', suiteLine: 'A', suiteLineConfirmed: true, roomPublicId: firstRoom.publicId } });
+  assert.equal(firstRackResponse.response.status, 201); assert.equal(firstRackResponse.data.sizeUnits, 47); assert.equal(firstRackResponse.data.suiteLineConfirmed, true);
+  const firstRack = firstRackResponse.data;
+  const duplicate = await request(`/api/sites/${phaseSite.publicId}/racks`, { method: 'POST', body: { label: 'row-a-01', roomPublicId: firstRoom.publicId } });
+  assert.equal(duplicate.response.status, 409); assert.equal(duplicate.data.code, 'duplicate_rack');
+  const sameLabelOtherRoom = await request(`/api/sites/${phaseSite.publicId}/racks`, { method: 'POST', body: { label: 'ROW-A-01', roomPublicId: secondRoom.publicId } });
+  assert.equal(sameLabelOtherRoom.response.status, 201);
+  const secondRack = (await request(`/api/sites/${phaseSite.publicId}/racks`, { method: 'POST', body: { label: 'ROW-B-01', suiteLine: 'B', suiteLineConfirmed: true, sizeUnits: 42, roomPublicId: secondRoom.publicId } })).data;
+
+  const firstDevice = (await request(`/api/sites/${phaseSite.publicId}/devices`, { method: 'POST', body: { hostname: 'PHASE-SWITCH-A', label: 'Switch A', rackPublicId: firstRack.publicId, rackUnit: 10, sizeUnits: 2, side: 'front' } })).data;
+  assert.equal(firstDevice.hostname, 'phase-switch-a'); assert.equal(firstDevice.roomPublicId, firstRoom.publicId); assert.ok(firstDevice.deviceKey);
+  const overlap = await request(`/api/sites/${phaseSite.publicId}/devices`, { method: 'POST', body: { hostname: 'phase-overlap', rackPublicId: firstRack.publicId, rackUnit: 11, sizeUnits: 1, side: 'front' } });
+  assert.equal(overlap.response.status, 409); assert.equal(overlap.data.code, 'rack_position_conflict');
+  const rearDevice = await request(`/api/sites/${phaseSite.publicId}/devices`, { method: 'POST', body: { hostname: 'phase-rear-a', rackPublicId: firstRack.publicId, rackUnit: 10, sizeUnits: 1, side: 'rear' } });
+  assert.equal(rearDevice.response.status, 201);
+  const moved = await request(`/api/sites/${phaseSite.publicId}/devices/${firstDevice.publicId}`, { method: 'PUT', body: { hostname: firstDevice.hostname, label: firstDevice.label, rackPublicId: secondRack.publicId, rackUnit: 5, sizeUnits: 2, side: 'rear', _baseVersion: firstDevice.version } });
+  assert.equal(moved.response.status, 200); assert.equal(moved.data.deviceKey, firstDevice.deviceKey); assert.equal(moved.data.roomPublicId, secondRoom.publicId);
+  assert.equal((await request(`/api/sites/${phaseSite.publicId}/racks/${firstRack.publicId}?baseVersion=${firstRack.version}`, { method: 'DELETE' })).response.status, 409);
+
+  const point = (await request(`/api/sites/${phaseSite.publicId}/termination-points`, { method: 'POST', body: { label: 'ODF-PHASE-01', kind: 'odf', notes: '', trayCount: 2, positionsPerTray: 12, roomPublicId: firstRoom.publicId } })).data;
+  const position = await request(`/api/sites/${phaseSite.publicId}/termination-points/${point.publicId}/positions`, { method: 'POST', body: { tray: 2, position: 4, label: 'Fictional fibre 4' } });
+  assert.equal(position.response.status, 201);
+  const duplicatePosition = await request(`/api/sites/${phaseSite.publicId}/termination-points/${point.publicId}/positions`, { method: 'POST', body: { tray: 2, position: 4, label: 'Duplicate' } });
+  assert.equal(duplicatePosition.response.status, 409); assert.equal(duplicatePosition.data.code, 'termination_position_duplicate');
+  const positionUpdate = await request(`/api/sites/${phaseSite.publicId}/termination-points/${point.publicId}/positions/${position.data.publicId}`, { method: 'PUT', body: { tray: 2, position: 5, label: 'Fictional fibre 5', _baseVersion: position.data.version } });
+  assert.equal(positionUpdate.response.status, 200); assert.equal(positionUpdate.data.version, 1);
+  const shrink = await request(`/api/sites/${phaseSite.publicId}/termination-points/${point.publicId}`, { method: 'PUT', body: { label: point.label, kind: point.kind, notes: point.notes, trayCount: 1, positionsPerTray: 12, roomPublicId: firstRoom.publicId, _baseVersion: point.version } });
+  assert.equal(shrink.response.status, 409); assert.equal(shrink.data.code, 'termination_capacity_in_use');
+
+  const distanceA = moved.data;
+  const distanceB = (await request(`/api/sites/${phaseSite.publicId}/devices`, { method: 'POST', body: { hostname: 'PHASE-SWITCH-B', rackPublicId: firstRack.publicId, rackUnit: 20, sizeUnits: 1, side: 'front' } })).data;
+  const sample = await request(`/api/sites/${phaseSite.publicId}/distances`, { method: 'POST', body: { endpointADevicePublicId: distanceA.publicId, endpointBDevicePublicId: distanceB.publicId, media: 'fibre', lengthMetres: 23.5 } });
+  assert.equal(sample.response.status, 201); assert.equal(sample.data.endpointADevicePublicId, distanceA.publicId);
+  const exactSuggestion = await request(`/api/sites/${phaseSite.publicId}/distances/suggestions?endpointADevicePublicId=${distanceA.publicId}&endpointBDevicePublicId=${distanceB.publicId}&media=fibre`);
+  assert.equal(exactSuggestion.data.matchType, 'device'); assert.equal(exactSuggestion.data.suggestedLengthMetres, 23.5);
+  const fallbackA = (await request(`/api/sites/${phaseSite.publicId}/devices`, { method: 'POST', body: { hostname: 'phase-fallback-a', rackPublicId: secondRack.publicId, rackUnit: 30, sizeUnits: 1, side: 'front' } })).data;
+  const fallbackB = (await request(`/api/sites/${phaseSite.publicId}/devices`, { method: 'POST', body: { hostname: 'phase-fallback-b', rackPublicId: firstRack.publicId, rackUnit: 30, sizeUnits: 1, side: 'front' } })).data;
+  const rackSuggestion = await request(`/api/sites/${phaseSite.publicId}/distances/suggestions?endpointADevicePublicId=${fallbackA.publicId}&endpointBDevicePublicId=${fallbackB.publicId}&media=fibre`);
+  assert.equal(rackSuggestion.data.matchType, 'rack'); assert.equal(rackSuggestion.data.suggestedLengthMetres, 23.5);
+
+  const firstBytes = Buffer.from([0xff, 0xd8, 0x01, 0xd9]); const secondBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  const firstPhoto = await request(`/api/photos/rack/${firstRack.publicId}`, { method: 'POST', body: firstBytes, headers: { 'Content-Type': 'image/jpeg', 'X-Photo-Name': 'Fictional rack first' } });
+  const secondPhoto = await request(`/api/photos/rack/${firstRack.publicId}`, { method: 'POST', body: secondBytes, headers: { 'Content-Type': 'image/png', 'X-Photo-Name': 'Fictional rack replacement' } });
+  assert.equal(firstPhoto.response.status, 201); assert.equal(secondPhoto.response.status, 201);
+  const viewerLogin = await request('/api/auth/login', { method: 'POST', body: { username: 'viewer', password: VIEWER_TEST_PASSWORD } }, null);
+  const viewerCookie = viewerLogin.response.headers.get('set-cookie').split(';')[0];
+  let photoHistory = await request(`/api/photos/rack/${firstRack.publicId}`, {}, viewerCookie);
+  assert.equal(photoHistory.response.status, 200); assert.equal(photoHistory.data.length, 2); assert.equal(photoHistory.data.filter((entry) => entry.current).length, 1); assert.equal(photoHistory.data[0].publicId, secondPhoto.data.publicId);
+  assert.equal((await request(`/api/photos/rack/${firstRack.publicId}`, { method: 'POST', body: firstBytes, headers: { 'Content-Type': 'image/jpeg', 'X-Photo-Name': 'Viewer rejected' } }, viewerCookie)).response.status, 403);
+  assert.equal((await request(`/api/photos/${secondPhoto.data.publicId}?baseVersion=${secondPhoto.data.version}`, { method: 'DELETE' }, viewerCookie)).response.status, 403);
+  assert.equal((await request(`/api/photos/${secondPhoto.data.publicId}?baseVersion=${secondPhoto.data.version}`, { method: 'DELETE' })).response.status, 204);
+  photoHistory = await request(`/api/photos/rack/${firstRack.publicId}`);
+  assert.equal(photoHistory.data.length, 1); assert.equal(photoHistory.data[0].current, true); assert.equal(photoHistory.data[0].version, 1);
+  const devicePhoto = await request(`/api/photos/device/${distanceA.publicId}`, { method: 'POST', body: firstBytes, headers: { 'Content-Type': 'image/jpeg', 'X-Photo-Name': 'Fictional device photo' } });
+  assert.equal(devicePhoto.response.status, 201);
+  assert.equal((await request(`/api/photos/device/${distanceA.publicId}`, {}, viewerCookie)).data[0].name, 'Fictional device photo');
+  assert.equal((await request(`/api/photos/device/${distanceA.publicId}`, { method: 'POST', body: firstBytes, headers: { 'Content-Type': 'text/plain', 'X-Photo-Name': 'Rejected type' } })).response.status, 415);
+  assert.equal((await request(`/api/photos/device/${distanceA.publicId}`, { method: 'POST', body: Buffer.alloc(10 * 1024 * 1024 + 1), headers: { 'Content-Type': 'image/jpeg', 'X-Photo-Name': 'Rejected size' } })).response.status, 413);
 });
 
 test('generic work package persists nested records and is searchable without plugins', async () => {
