@@ -93,14 +93,17 @@ it cannot supply missing executable behavior.
 
 ## Current next action
 
-The next item is **INVENTORY-01**. Do not add more import or presentation polish
-until the missing core workflows are recorded and ordered.
+The next item is **INVENTORY-02**. Qualify existing completion claims against
+the evidence inventory before adding more import or presentation polish.
 
 ### Phase 1 — Establish the public-safe parity inventory
 
-- [ ] **INVENTORY-01** Build a public-safe matrix mapping every frozen product
+- [x] **INVENTORY-01** Build a public-safe matrix mapping every frozen product
   workflow to its current core UI, API, persistence, offline and test coverage.
   Record `missing`, `partial`, or `verified`; never include private values.
+  Evidence: `e108e1c` adds `docs/CORE_PARITY_INVENTORY.md`, mapping 34 detailed
+  workflows and all 14 acceptance flows to exact frozen and current files/tests;
+  it records 6 missing, 28 partial and 0 verified end-to-end workflows.
 - [ ] **INVENTORY-02** Replace or qualify checked claims in
   `docs/IMPLEMENTATION_PLAN.md`, `docs/VISUAL_PARITY.md` and release-readiness
   documents when they cover only styling, schema or API presence.
@@ -308,3 +311,4 @@ Next unchecked item:
 | Date | Item | Commit or PR | Evidence | Next action |
 | --- | --- | --- | --- | --- |
 | 2026-08-31 | Recovery decision | `6de4834` | Frozen original fixed at PR 23 commit `4bc778e9`; incomplete core parity acknowledged | INVENTORY-01 |
+| 2026-08-31 | INVENTORY-01 | `e108e1c` | Public-safe 34-workflow UI/API/persistence/offline/test matrix plus all 14 acceptance-flow roll-ups in `docs/CORE_PARITY_INVENTORY.md` | INVENTORY-02 |
