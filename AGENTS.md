@@ -3,6 +3,11 @@
 This tree is the generic TechSiteManager core. Keep it usable and testable with
 an empty plugin list.
 
+Read `docs/CORE_PLUGIN_RECOVERY_GUIDE.md` before product, presentation, plugin,
+import, persistence, offline, or release work. It is the operational recovery
+checklist and identifies the next accepted task. Do not mark a capability
+complete merely because its table or API exists.
+
 Never add corporate information, real operational fixtures, internal URLs,
 private hostnames or paths, credentials, source-derived mappings, private
 schema reproductions, private migration knowledge, or screenshots/logs that
