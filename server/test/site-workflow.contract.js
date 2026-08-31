@@ -235,11 +235,12 @@ test('engineer completes the Phase 2 infrastructure workflow and viewer remains 
   const deviceForm = deviceHeading.locator('..');
   await deviceForm.locator('select[name="rackPublicId"]').selectOption({ label: 'ROW-B-01' });
   await deviceForm.locator('input[name="rackUnit"]').fill('5');
+  await deviceForm.locator('input[name="sizeUnits"]').fill('3');
   await deviceForm.locator('select[name="side"]').selectOption('rear');
   await deviceForm.getByRole('button', { name: 'Save device' }).click();
   await page.waitForFunction(async ({ siteId, deviceId }) => (await (await fetch(`/api/sites/${siteId}/devices`)).json()).find((entry) => entry.publicId === deviceId)?.side === 'rear', { siteId: sitePublicId, deviceId: canonical.publicId });
   const moved = await page.evaluate(async ({ siteId, deviceId }) => (await (await fetch(`/api/sites/${siteId}/devices`)).json()).find((entry) => entry.publicId === deviceId), { siteId: sitePublicId, deviceId: canonical.publicId });
-  assert.equal(moved.deviceKey, canonical.deviceKey); assert.equal(moved.side, 'rear'); assert.equal(moved.rackUnit, 5);
+  assert.equal(moved.deviceKey, canonical.deviceKey); assert.equal(moved.side, 'rear'); assert.equal(moved.rackUnit, 5); assert.equal(moved.sizeUnits, 3);
 
   await openSiteSection(page, 'racks');
   firstRack = page.locator('.rack-workflow').first();
@@ -291,6 +292,13 @@ test('engineer completes the Phase 2 infrastructure workflow and viewer remains 
   await page.getByRole('cell', { name: '17.25 m' }).waitFor();
   await page.locator('form').filter({ has: page.getByRole('heading', { name: 'Distance calculator' }) }).getByRole('button', { name: 'Suggest from history' }).click();
   await page.getByText(/Exact device-pair suggestion: 17.25 m/).waitFor();
+
+  await openSiteSection(page, 'devices');
+  const removableHeading = page.getByRole('heading', { name: 'phase-ui-switch-b', exact: true });
+  await removableHeading.waitFor();
+  page.once('dialog', (dialog) => dialog.accept());
+  await removableHeading.locator('..').getByRole('button', { name: 'Delete' }).click();
+  await page.waitForFunction(async (publicId) => !(await (await fetch(`/api/sites/${publicId}/devices`)).json()).some((entry) => entry.hostname === 'phase-ui-switch-b'), sitePublicId);
 
   await viewer.page.goto(`${instance.base}/#site/${sitePublicId}/racks`);
   await viewer.page.getByRole('heading', { name: 'Rack elevations' }).waitFor();

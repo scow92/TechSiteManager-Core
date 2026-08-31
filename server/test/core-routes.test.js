@@ -223,6 +223,11 @@ test('Phase 2 infrastructure workflows validate placement, relationships, histor
   assert.equal((await request(`/api/photos/${secondPhoto.data.publicId}?baseVersion=${secondPhoto.data.version}`, { method: 'DELETE' })).response.status, 204);
   photoHistory = await request(`/api/photos/rack/${firstRack.publicId}`);
   assert.equal(photoHistory.data.length, 1); assert.equal(photoHistory.data[0].current, true); assert.equal(photoHistory.data[0].version, 1);
+  const devicePhoto = await request(`/api/photos/device/${distanceA.publicId}`, { method: 'POST', body: firstBytes, headers: { 'Content-Type': 'image/jpeg', 'X-Photo-Name': 'Fictional device photo' } });
+  assert.equal(devicePhoto.response.status, 201);
+  assert.equal((await request(`/api/photos/device/${distanceA.publicId}`, {}, viewerCookie)).data[0].name, 'Fictional device photo');
+  assert.equal((await request(`/api/photos/device/${distanceA.publicId}`, { method: 'POST', body: firstBytes, headers: { 'Content-Type': 'text/plain', 'X-Photo-Name': 'Rejected type' } })).response.status, 415);
+  assert.equal((await request(`/api/photos/device/${distanceA.publicId}`, { method: 'POST', body: Buffer.alloc(10 * 1024 * 1024 + 1), headers: { 'Content-Type': 'image/jpeg', 'X-Photo-Name': 'Rejected size' } })).response.status, 413);
 });
 
 test('generic work package persists nested records and is searchable without plugins', async () => {
