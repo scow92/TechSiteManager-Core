@@ -95,9 +95,9 @@ it cannot supply missing executable behavior.
 
 ## Current next action
 
-Phase 1 and `CORE-SITE-01` are complete. The next item is **CORE-RACK-01**.
-Implement the canonical room-owned rack browser workflow, including duplicate
-and suite-line decisions, concurrency, persistence and offline replay.
+Phases 1 and 2 are complete. The next item is **CORE-PACK-01**. Implement the
+in-memory transactional work-package editor for metadata and nested records,
+including stable child identity and debounced persistence.
 
 ### Phase 1 — Establish the public-safe parity inventory
 
@@ -137,22 +137,43 @@ and suite-line decisions, concurrency, persistence and offline replay.
   updates, scoped offline conflict review and five green fictional browser
   contract cases. All required core, browser, visual, disclosure, licence and
   package checks passed; no server database migration was required.
-- [ ] **CORE-RACK-01** Add and edit canonical racks from the browser, including
+- [x] **CORE-RACK-01** Add and edit canonical racks from the browser, including
   room ownership, default height, suite-line inference/confirmation, duplicate
   handling, concurrency and offline replay.
-- [ ] **CORE-RACK-02** Implement usable front and rear rack elevations with
+  Evidence: `d590638` adds room/rack create, edit and guarded delete; unique
+  room-scoped labels; 47U default; suite inference/confirmation; optimistic
+  conflict recovery; durable temporary-ID replay; and passing API/browser
+  duplicate and offline contracts.
+- [x] **CORE-RACK-02** Implement usable front and rear rack elevations with
   add, move, resize and remove device interactions while preserving stable
   device keys.
-- [ ] **CORE-RACK-03** Implement rack and per-device photo upload, metadata,
+  Evidence: `d590638` adds bounded placement/collision validation and writer
+  interactions for both faces; the browser contract proves add and move while
+  the API contract proves overlap rejection, rear placement and stable keys;
+  `3cb4162` extends the browser proof through resize and removal.
+- [x] **CORE-RACK-03** Implement rack and per-device photo upload, metadata,
   current/history viewing, content retrieval, replacement and deletion with
   type, size, role and backup coverage.
-- [ ] **CORE-ODF-01** Implement canonical termination-point/ODF create, edit,
+  Evidence: `d590638` adds rack/device galleries, 10MB JPEG/PNG/WebP bounds,
+  current/history replacement, optimistic deletion, viewer enforcement and
+  backup/restore byte preservation; `3cb4162` explicitly covers device photos
+  and rejected media types/sizes in addition to the browser rack lifecycle.
+- [x] **CORE-ODF-01** Implement canonical termination-point/ODF create, edit,
   delete and relationship validation, including tray and fibre positions needed
   by schedules.
-- [ ] **CORE-DEVICE-01** Implement the site device directory and canonical
+  Evidence: `d590638` adds termination-point and tray/position create, edit and
+  delete, capacity and uniqueness validation, relationship-safe shrink rules,
+  database triggers, UI workflows and recovery coverage.
+- [x] **CORE-DEVICE-01** Implement the site device directory and canonical
   lowercase hostname/location behavior across schedules and racks.
-- [ ] **CORE-DIST-01** Implement equipment-pair distance history, rack fallback,
+  Evidence: `d590638` adds canonical room/rack device maintenance, lowercase
+  hostnames, immutable keys, schedule endpoint suggestions from the site
+  directory and browser/API location checks.
+- [x] **CORE-DIST-01** Implement equipment-pair distance history, rack fallback,
   suggestions and the interactive distance calculator.
+  Evidence: `d590638` adds structured device/rack pair history, exact-device
+  and rack fallback matching, media scoping, max-observed suggestions and the
+  interactive record/suggest workflow with API and browser coverage.
 
 ### Phase 3 — Restore complete work-package workflows
 
@@ -337,3 +358,4 @@ Next unchecked item:
 | 2026-08-31 | INVENTORY-03 | `48bf45f` | Isolated fictional site browser contract executes three expected-red cases for edit persistence, stale-conflict retention and viewer read-only behavior without weakening the green suite | INVENTORY-04 |
 | 2026-08-31 | INVENTORY-04 | `48bf45f` | Public candidate database states, forward-only preservation bridge, recovery order, evidence gates and restore-based rollback are fixed in `docs/CANDIDATE_DATABASE_MIGRATION_STRATEGY.md` | CORE-SITE-01 |
 | 2026-08-31 | CORE-SITE-01 | `f8b7ca0` | Five-case site contract passes edit persistence, viewer state, online conflicts, durable/coalesced replay and offline conflict review; full unit, e2e, visual, disclosure, history, licence and package checks pass; IndexedDB advances to v3 with no server migration | CORE-RACK-01 |
+| 2026-08-31 | Phase 2 (`CORE-RACK-01`–`CORE-DIST-01`) | `d590638`, `3cb4162` | 72 unit/route/recovery tests and all 7 site browser contracts pass; zero-plugin/plugin e2e and refreshed visual comparisons pass; disclosure/history, licence and package reviews pass; migration `0003` preserves constraints and survives down/up, backup/restore, non-root read-only image smoke and restored-database startup | CORE-PACK-01 |
