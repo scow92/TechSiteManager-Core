@@ -307,4 +307,4 @@ Next unchecked item:
 
 | Date | Item | Commit or PR | Evidence | Next action |
 | --- | --- | --- | --- | --- |
-| 2026-08-31 | Recovery decision | Documentation branch | Frozen original fixed at PR 23 commit `4bc778e9`; incomplete core parity acknowledged | INVENTORY-01 |
+| 2026-08-31 | Recovery decision | `6de4834` | Frozen original fixed at PR 23 commit `4bc778e9`; incomplete core parity acknowledged | INVENTORY-01 |
