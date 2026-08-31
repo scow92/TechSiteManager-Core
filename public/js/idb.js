@@ -92,11 +92,16 @@
     async completeOperation(operationId, remap) {
       const database = await open();
       return new Promise((resolve, reject) => {
-        const stores = remap ? ['operation-queue', 'id-remaps', 'operation-completions'] : ['operation-queue', 'operation-completions'];
+        const stores = remap ? ['operation-queue', 'id-remaps', 'operation-completions', 'dirty-work-packages'] : ['operation-queue', 'operation-completions', 'dirty-work-packages'];
         const tx = database.transaction(stores, 'readwrite');
-        tx.objectStore('operation-queue').delete(operationId);
-        tx.objectStore('operation-completions').put({ id: operationId, completedAt: Date.now() });
-        if (remap) tx.objectStore('id-remaps').put(remap);
+        const queue = tx.objectStore('operation-queue');
+        const operation = queue.get(operationId);
+        operation.onsuccess = () => {
+          queue.delete(operationId);
+          tx.objectStore('operation-completions').put({ id: operationId, completedAt: Date.now() });
+          if (remap) tx.objectStore('id-remaps').put(remap);
+          if (operation.result?.dirtyPackagePublicId) tx.objectStore('dirty-work-packages').delete(operation.result.dirtyPackagePublicId);
+        };
         tx.oncomplete = () => { database.close(); resolve(); };
         tx.onerror = () => { database.close(); reject(tx.error); };
         tx.onabort = () => { database.close(); reject(tx.error); };

@@ -51,7 +51,7 @@ function searchResult(record, terms, initialView) {
       : record.sitePublicId ? `#site/${encodeURIComponent(record.sitePublicId)}/${definition.section}` : '';
   if (!href) return null;
   const context = entityType === 'work_package'
-    ? [record.siteName, record.projectReference || record.externalReference].filter(Boolean).join(' · ')
+    ? [record.siteName, record.projectReference || record.externalReference, record.matchedWorkItems?.length ? `Work items: ${record.matchedWorkItems.map((item) => item.itemReference).join(', ')}` : null].filter(Boolean).join(' · ')
     : entityType === 'site' ? [record.reference || record.siteCode, record.description].filter(Boolean).join(' · ')
       : [record.siteCode, record.siteName].filter(Boolean).join(' — ');
   return el('a', { class: 'start-job', href, 'aria-label': title },
@@ -88,11 +88,17 @@ export async function homeView(user, render) {
         const rows = /** @type {SearchRecord[]} */ (await api(`/search?scope=all&q=${encodeURIComponent(query)}`));
         if (version !== requestVersion) return;
         /** @type {HTMLElement[]} */ const results = [];
-        for (const record of rows) {
-          const result = searchResult(record, terms, initialView);
-          if (result) results.push(result);
+        let resultCount = 0;
+        const groups = [
+          { label: `Active ${terms.plural.toLowerCase()}`, rows: rows.filter((record) => record.entityType === 'work_package' && record.group === 'active') },
+          { label: `Completed ${terms.plural.toLowerCase()}`, rows: rows.filter((record) => record.entityType === 'work_package' && record.group === 'completed') },
+          { label: 'Sites and infrastructure', rows: rows.filter((record) => record.entityType !== 'work_package') }
+        ];
+        for (const group of groups) if (group.rows.length) {
+          results.push(el('h3', { class: 'search-group-heading' }, group.label));
+          for (const record of group.rows) { const result = searchResult(record, terms, initialView); if (result) { results.push(result); resultCount += 1; } }
         }
-        recordSearch.results.replaceChildren(...(results.length ? [el('p', { class: 'search-result-count' }, `${results.length} record${results.length === 1 ? '' : 's'} found`), ...results] : [el('p', { class: 'empty-inline' }, `No records match “${query}”.`)]));
+        recordSearch.results.replaceChildren(...(results.length ? [el('p', { class: 'search-result-count' }, `${resultCount} record${resultCount === 1 ? '' : 's'} found`), ...results] : [el('p', { class: 'empty-inline' }, `No records match “${query}”.`)]));
       } catch (error) { if (version === requestVersion) recordSearch.results.replaceChildren(el('p', { class: 'error' }, errorMessage(error))); }
     }, 180);
   });
@@ -110,7 +116,7 @@ export async function homeView(user, render) {
   });
 
   const importCards = providers.length ? providers.map((provider) => el('a', { class: 'start-card', href: `#import/${encodeURIComponent(provider.id)}` }, el('span', { class: 'start-card-ico', 'aria-hidden': 'true' }, '▩'), el('span', { class: 'start-card-title' }, provider.label), el('span', { class: 'start-card-desc' }, 'Validate the source, review normalized changes, and apply atomically.'))) : [el('a', { class: 'start-card', href: '#import' }, el('span', { class: 'start-card-ico', 'aria-hidden': 'true' }, '▩'), el('span', { class: 'start-card-title' }, 'Import providers'), el('span', { class: 'start-card-desc' }, 'No providers are installed; generic records remain fully available.'))];
-  const active = packages.filter((entry) => !['complete', 'cancelled'].includes(entry.status));
+  const active = packages.filter((entry) => entry.status !== 'complete');
   const completed = packages.filter((entry) => entry.status === 'complete');
   const add = user.role !== 'viewer' ? el('button', { type: 'button', class: 'secondary', onclick: () => { create.hidden = false; create.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } }, `Add ${terms.singular.toLowerCase()}`) : null;
 

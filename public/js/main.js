@@ -7,6 +7,7 @@ import { importView } from './views/import.js';
 import { settingsView } from './views/settings.js';
 import { sitesView, siteView } from './views/sites.js';
 import { packageView } from './views/work-package.js';
+import { flushAll } from './work-package-store.js';
 
 /** @typedef {import('../../server/types/browser-models').User} User */
 /** @typedef {import('../../server/types/browser-models').Site} Site */
@@ -14,6 +15,7 @@ import { packageView } from './views/work-package.js';
 /** @type {User | null} */
 let user = null;
 let packageInitialView = 'details';
+let renderedRoute = '';
 
 /** @param {string} id @returns {HTMLElement} */
 function shellElement(id) {
@@ -86,12 +88,13 @@ function renderPackageNavigation(presentation, packageId) {
     { id: 'connections', label: 'Circuits', icon: '◉' },
     { id: 'consumables', label: 'Consumables', icon: '▣' }
   ];
+  const navigationViews = views.some((view) => view.id === 'handover') ? views : [...views, { id: 'handover', label: 'Handover', icon: '▧' }];
   packageContextLabel.textContent = presentation?.terms.singular || 'Work package';
   packageInitialView = views[0]?.id || 'details';
   packageContext.setAttribute('aria-label', `${presentation?.terms.singular || 'Work package'} context`);
   packageNav.replaceChildren(
     el('p', { class: 'nav-label' }, presentation?.terms.singular || 'Work package'),
-    ...views.map((view) => el('a', { class: 'nav-item', href: `#package/${encodeURIComponent(packageId)}/${view.id}`, 'data-package-view': view.id }, el('span', { 'aria-hidden': 'true' }, view.icon || '▤'), view.label)),
+    ...navigationViews.map((view) => el('a', { class: 'nav-item', href: `#package/${encodeURIComponent(packageId)}/${view.id}`, 'data-package-view': view.id }, el('span', { 'aria-hidden': 'true' }, view.icon || '▤'), view.label)),
     el('a', { class: 'nav-item', href: '#import', 'data-route': 'import' }, el('span', { 'aria-hidden': 'true' }, '▩'), 'Import')
   );
 }
@@ -142,11 +145,16 @@ function renderRouteFailure(route, error) {
 
 async function renderSafely() {
   const route = currentRoute();
+  if (renderedRoute && route !== renderedRoute) {
+    try { await flushAll(); }
+    catch (error) { history.replaceState(null, '', `#${renderedRoute}`); notify(`Navigation paused: ${errorMessage(error)}`); return; }
+  }
   try { await render(); }
   catch (error) {
     renderRouteFailure(route, error);
     notify(errorMessage(error));
   }
+  renderedRoute = currentRoute();
 }
 
 async function render() {
@@ -178,6 +186,7 @@ async function render() {
 const logout = document.getElementById('logout');
 if (!logout) throw new Error('Required shell element is missing: logout');
 logout.addEventListener('click', async () => {
+  try { await flushAll(); } catch (error) { notify(`Sign out paused: ${errorMessage(error)}`); return; }
   await OfflineStore.put('pending-logout', { pending: true, createdAt: Date.now() }, 'current');
   try {
     await api('/auth/logout', { method: 'POST' });

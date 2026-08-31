@@ -69,7 +69,14 @@
           remap = { temporaryId: operation.temporaryId, publicId, operationId: operation.id, mappedAt: now() };
           remaps.push(remap);
         }
+        let result = null;
+        if (operation.dirtyPackagePublicId) {
+          try { result = await response.clone().json(); } catch { /* a successful replay may have no JSON body */ }
+        }
         await store.completeOperation(operation.id, remap);
+        if (operation.dirtyPackagePublicId && typeof root.dispatchEvent === 'function' && typeof root.CustomEvent === 'function') {
+          root.dispatchEvent(new root.CustomEvent('offline-operation-complete', { detail: { operation, result } }));
+        }
         active.delete(operation.id);
         continue;
       }

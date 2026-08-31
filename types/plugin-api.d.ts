@@ -223,8 +223,23 @@ export interface ExportWorkItem {
   readonly description: string;
   readonly status: string;
   readonly sequence: number;
+  readonly leadAssignee: string | null;
+  readonly assignees: readonly string[];
+  readonly completedAt: string | null;
+  readonly completedBy: { readonly publicId: string; readonly displayName: string } | null;
+  readonly handoverPhotos: readonly ExportPhoto[];
   readonly version: number;
   readonly extensions: Readonly<Record<string, { readonly value: unknown; readonly version: number }>>;
+}
+
+export interface ExportPhoto {
+  readonly publicId: string;
+  readonly name: string;
+  readonly description: string;
+  readonly mediaType: string;
+  readonly current: boolean;
+  readonly version: number;
+  readonly createdAt: string;
 }
 
 export interface ExportSegment {
@@ -271,6 +286,9 @@ export interface WorkPackageProjection {
   readonly status: string;
   readonly leadAssignee: string | null;
   readonly assignees: readonly string[];
+  readonly completedAt: string | null;
+  readonly completedBy: { readonly publicId: string; readonly displayName: string } | null;
+  readonly handoverPhotos: readonly ExportPhoto[];
   readonly version: number;
   readonly extensions: Readonly<Record<string, { readonly value: unknown; readonly version: number }>>;
   readonly workItems: readonly ExportWorkItem[];

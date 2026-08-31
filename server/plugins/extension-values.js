@@ -5,6 +5,7 @@ const db = require('../db/knex');
 const { httpError } = require('../lib/errors');
 const { object, knownKeys, integer, string } = require('../lib/validation');
 const audit = require('../lib/audit');
+const { assertEntityMutable } = require('../lib/work-package-locks');
 
 const TABLES = Object.freeze({
   'work-package': 'work_packages',
@@ -76,6 +77,7 @@ async function put(registry, entityType, entityPublicId, fieldId, input, actorUs
   const value = validateValue(field, body.value);
   return db.transaction(async (trx) => {
     await requireEntity(trx, entityType, entityPublicId);
+    await assertEntityMutable(trx, entityType, entityPublicId);
     const key = { plugin_id: presentation.pluginId, entity_type: entityType, entity_public_id: entityPublicId, field_id: storedFieldId };
     const existing = await trx('extension_values').where(key).first();
     let version;

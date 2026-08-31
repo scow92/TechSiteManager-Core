@@ -30,11 +30,12 @@ or product-parity claim.
 - **Implemented technical foundations:** generic persistence and APIs,
   authentication/authorization, import and plugin contracts, the responsive
   shell, selected offline primitives, and SQLite-safe backup/restore.
-- **Partial browser workflows:** the inventory records 27 partial workflows;
-  many APIs and screens are not connected into complete interactions.
-- **Verified end-to-end product parity:** one detailed site workflow is
-  verified. Six workflows are missing, no critical `FLOW-*` acceptance item is
-  checked, and screenshot regression is not interaction parity.
+- **Partial browser workflows:** the inventory records 16 partial workflows;
+  later cable, materials, users, PWA and operational paths remain incomplete.
+- **Verified detailed workflows:** 12 of 34 inventory rows now have end-to-end
+  implementation evidence. Six workflows are missing, no critical `FLOW-*`
+  acceptance item is checked, and screenshot regression is not interaction
+  parity.
 - **Formal approval and production readiness:** not established. Required
   human approvals, migration evidence, full workflow acceptance, and
   operational gates remain incomplete.
@@ -94,9 +95,9 @@ curl --fail http://127.0.0.1:3000/api/health
 The browser is plain JavaScript using native ES modules without a framework,
 bundler, transpiler, or build step. A service-worker shell and IndexedDB
 stores provide offline foundations. The generic queue engine replays FIFO,
-retains transient and unclassified failures, and exposes permanent rejections,
-but only selected browser mutations currently enqueue; package and most
-infrastructure workflows remain incomplete. The server is CommonJS on
+retains transient and unclassified failures, and exposes permanent rejections.
+The complete work-package graph and selected infrastructure mutations enqueue;
+product-wide offline acceptance remains incomplete. The server is CommonJS on
 Express, Knex, and SQLite. Purpose-built generic migrations create the
 fresh-install schema; no candidate/legacy database bridge exists yet.
 

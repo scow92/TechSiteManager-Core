@@ -51,7 +51,8 @@ data. Home and work-package detail screenshots are captured in both themes at 14
 820×1180, 1180×820, 390×844, and 844×390. Additional desktop captures cover
 account setup, sign-in, loading, empty, validation and safe-error states,
 search, site lists, site overview, rooms, rack elevations, termination points,
-devices, distances, work items, connections, consumables, provider selection,
+devices, distances, work items, connections, consumables, handover galleries,
+administrator-completed package state, print export, provider selection,
 reconciliation, import result, and settings. Mobile captures cover the drawer,
 header/footer shell, touch layout, and offline indicator.
 

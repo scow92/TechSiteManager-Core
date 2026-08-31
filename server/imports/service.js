@@ -8,6 +8,7 @@ const { buildProposal, flatten, FIELD_COLUMNS } = require('./reconcile');
 const { boundedJson, knownKeys, string, integer, array, object } = require('../lib/validation');
 const { httpError } = require('../lib/errors');
 const audit = require('../lib/audit');
+const { assertEntityMutable } = require('../lib/work-package-locks');
 const { acquireArtifact, callProvider } = require('./artifacts');
 const { sha256, canonicalHash, sourceFingerprint } = require('./fingerprints');
 const draftStorage = require('./draft-storage');
@@ -252,6 +253,7 @@ function acceptedChanges(entity, approval) {
 async function createEntity(trx, entity, parentIds, siteId, workPackageId, approval) {
   const publicId = uuid();
   const changes = acceptedChanges(entity, approval);
+  if ((entity.entityType === 'work_package' || entity.entityType === 'work_item') && changes.status === 'complete') throw httpError(422, 'completion_endpoint_required', 'Imported records must be completed through the core completion workflow');
   let row;
   if (entity.entityType === 'work_package') {
     if (!changes.package_ref || !changes.title) throw httpError(422, 'required_field_deferred', 'Required work package fields must be approved');
@@ -284,8 +286,11 @@ async function createEntity(trx, entity, parentIds, siteId, workPackageId, appro
 async function updateEntity(trx, entity, approval, expectedVersion) {
   const table = TABLES[entity.entityType];
   const changes = acceptedChanges(entity, approval);
+  if ((entity.entityType === 'work_package' || entity.entityType === 'work_item') && changes.status === 'complete') throw httpError(422, 'completion_endpoint_required', 'Imported records must be completed through the core completion workflow');
   const acceptsExtension = entity.fields.some((field) => !FIELD_COLUMNS[entity.entityType][field.fieldPath] && ['accept-source', 'return-to-source'].includes(decisionFor(approval, entity.proposalId, field)));
   if (!Object.keys(changes).length && !acceptsExtension) return /** @type {Promise<DbRow>} */ (trx(table).where({ public_id: entity.entityPublicId }).first());
+  if (!entity.entityPublicId) throw httpError(500, 'import_state_invalid', 'Stored import state is invalid');
+  await assertEntityMutable(trx, entity.entityType, entity.entityPublicId);
   const changed = await trx(table).where({ public_id: entity.entityPublicId, version: expectedVersion }).update({ ...changes, version: expectedVersion + 1 });
   if (!changed) throw httpError(409, 'stale_approval', 'Import approval is stale');
   return /** @type {Promise<DbRow>} */ (trx(table).where({ public_id: entity.entityPublicId }).first());
@@ -334,6 +339,8 @@ async function apply(registry, draftId, actorUserId, input) {
       if (!prior) throw httpError(500, 'import_state_invalid', 'Stored import state is invalid');
       return resultFromRun(prior);
     }
+    const existingPackage = proposal.entityProposals.find((entry) => entry.entityType === 'work_package')?.entityPublicId;
+    if (existingPackage) await assertEntityMutable(trx, 'work_package', existingPackage);
     await assertVersions(trx, expectedVersions);
     const fingerprint = sourceFingerprint(draft);
     let source = /** @type {SourceRow | undefined} */ (await trx('import_sources').where({ provider_id: draft.providerId, external_source_id: draft.source.externalSourceId }).first());

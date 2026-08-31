@@ -1,9 +1,9 @@
 'use strict';
 
-const CACHE = 'techsitemanager-shell-v11';
+const CACHE = 'techsitemanager-shell-v12';
 const SHELL = [
   '/', '/index.html', '/css/styles.css', '/manifest.json',
-  '/js/idb.js', '/js/offline.js', '/js/api.js', '/js/auth.js', '/js/dom.js', '/js/main.js', '/js/offline-ui.js',
+  '/js/idb.js', '/js/offline.js', '/js/api.js', '/js/auth.js', '/js/dom.js', '/js/main.js', '/js/offline-ui.js', '/js/work-package-store.js',
   '/js/presentation.js',
   '/js/import/descriptors.js', '/js/import/reconciliation.js',
   '/js/views/home.js', '/js/views/import.js', '/js/views/infrastructure.js', '/js/views/settings.js', '/js/views/sites.js', '/js/views/work-package.js'

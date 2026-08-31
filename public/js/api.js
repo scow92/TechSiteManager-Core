@@ -1,4 +1,4 @@
-/** @typedef {Omit<RequestInit, 'body'> & { body?: unknown, queueable?: boolean, queueMetadata?: { dependsOn?: string[], temporaryId?: string | null, requiredTemporaryIds?: string[], operationKey?: string | null, entityType?: string | null, entityPublicId?: string | null, label?: string | null } }} ApiOptions */
+/** @typedef {Omit<RequestInit, 'body'> & { body?: unknown, queueable?: boolean, queueMetadata?: { dependsOn?: string[], temporaryId?: string | null, requiredTemporaryIds?: string[], operationKey?: string | null, entityType?: string | null, entityPublicId?: string | null, dirtyPackagePublicId?: string | null, label?: string | null } }} ApiOptions */
 /** @template T @param {string} path @param {ApiOptions} [options] @returns {Promise<T>} */
 export async function api(path, options = {}) {
   const { queueable = false, queueMetadata = {}, ...requestOptions } = options;
@@ -25,6 +25,7 @@ export async function api(path, options = {}) {
         dependsOn: queueMetadata.dependsOn || [], temporaryId: queueMetadata.temporaryId || null,
         requiredTemporaryIds: queueMetadata.requiredTemporaryIds || [], operationKey,
         entityType: queueMetadata.entityType || null, entityPublicId: queueMetadata.entityPublicId || null,
+        dirtyPackagePublicId: queueMetadata.dirtyPackagePublicId || null,
         label: queueMetadata.label || null
       };
       await OfflineStore.put('operation-queue', operation);
@@ -49,6 +50,10 @@ export async function api(path, options = {}) {
       serverVersion: 'serverVersion' in details && Number.isInteger(details.serverVersion) ? details.serverVersion : null
     });
     throw error;
+  }
+  if (queueable && queueMetadata.operationKey) {
+    const existing = (await OfflineStore.all('operation-queue')).find((entry) => entry.operationKey === queueMetadata.operationKey);
+    if (existing) await OfflineStore.completeOperation(existing.id, null);
   }
   if (method === 'GET') await OfflineStore.put('reference-cache', data, path);
   return /** @type {T} */ (data);

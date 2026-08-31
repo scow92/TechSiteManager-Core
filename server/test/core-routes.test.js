@@ -299,11 +299,76 @@ test('generic work-item, circuit, segment, and requirement mutations preserve st
   assert.equal(result.response.status, 201); assert.ok(result.data.consumableRequirements.some((entry) => entry.description === 'Added generic requirement'));
 });
 
+test('Phase 3 transactional editor atomically preserves stable nested identities and idempotent saves', async () => {
+  const loaded = (await request(`/api/work-packages/${workPackage.publicId}`)).data;
+  const existingItem = loaded.workItems[0]; const existingCircuit = loaded.circuits[0]; const existingSegment = existingCircuit.segments[0];
+  const addedItemId = crypto.randomUUID(); const addedCircuitId = crypto.randomUUID(); const addedSegmentId = crypto.randomUUID(); const addedRequirementId = crypto.randomUUID(); const saveId = crypto.randomUUID();
+  const body = {
+    saveId, _baseVersion: loaded.version, packageReference: loaded.packageReference, externalReference: loaded.externalReference, projectReference: 'PROJECT-PHASE-THREE', title: 'Transactional fictional package', description: loaded.description, status: 'active', leadAssignee: 'engineer', assignees: ['engineer', 'manager'],
+    workItems: [{ publicId: existingItem.publicId, _baseVersion: existingItem.version, itemReference: existingItem.itemReference, title: existingItem.title, description: existingItem.description, status: existingItem.status, sequence: 0, leadAssignee: 'engineer', assignees: ['engineer'] }, { publicId: addedItemId, _baseVersion: 0, itemReference: 'ITEM-TXN-2', title: 'Transactional child', description: 'Fictional nested edit', status: 'planned', sequence: 1, leadAssignee: 'manager', assignees: ['manager'] }],
+    circuits: [{ publicId: existingCircuit.publicId, _baseVersion: existingCircuit.version, circuitReference: existingCircuit.circuitReference, description: existingCircuit.description, media: existingCircuit.media, status: existingCircuit.status, segments: [{ publicId: existingSegment.publicId, _baseVersion: existingSegment.version, segmentReference: existingSegment.segmentReference, sequence: 0, fromEndpoint: existingSegment.fromEndpoint, toEndpoint: existingSegment.toEndpoint, lengthMetres: 9.5, notes: 'Saved in transaction' }] }, { publicId: addedCircuitId, _baseVersion: 0, circuitReference: 'CIRCUIT-TXN-2', description: 'Nested fictional circuit', media: 'fibre', status: 'planned', segments: [{ publicId: addedSegmentId, _baseVersion: 0, segmentReference: 'SEGMENT-TXN-2', sequence: 0, fromEndpoint: 'fictional-source:1', toEndpoint: 'fictional-target:1', lengthMetres: 12, notes: '' }] }],
+    consumableRequirements: [{ publicId: addedRequirementId, _baseVersion: 0, cataloguePublicId: catalogue.publicId, description: 'Transactional labels', quantityRequired: 8, unit: 'each' }]
+  };
+  const saved = await request(`/api/work-packages/${loaded.publicId}/editor`, { method: 'PUT', body });
+  assert.equal(saved.response.status, 200); assert.equal(saved.data.projectReference, 'PROJECT-PHASE-THREE');
+  assert.equal(saved.data.workItems.find((item) => item.publicId === addedItemId).leadAssignee, 'manager');
+  assert.equal(saved.data.circuits.find((circuit) => circuit.publicId === addedCircuitId).segments[0].publicId, addedSegmentId);
+  assert.equal(saved.data.consumableRequirements[0].publicId, addedRequirementId);
+  const retry = await request(`/api/work-packages/${loaded.publicId}/editor`, { method: 'PUT', body });
+  assert.equal(retry.response.status, 200); assert.equal(retry.data.version, saved.data.version); assert.equal(retry.data.workItems.filter((item) => item.publicId === addedItemId).length, 1);
+  const invalid = { ...body, saveId: crypto.randomUUID(), _baseVersion: saved.data.version, title: 'Must roll back', circuits: [{ ...body.circuits[0], _baseVersion: saved.data.circuits.find((entry) => entry.publicId === existingCircuit.publicId).version, segments: [{ ...body.circuits[0].segments[0], _baseVersion: saved.data.circuits.find((entry) => entry.publicId === existingCircuit.publicId).segments[0].version, lengthMetres: -1 }] }], workItems: saved.data.workItems.map((item) => ({ publicId: item.publicId, _baseVersion: item.version, itemReference: item.itemReference, title: item.title, description: item.description, status: item.status, sequence: item.sequence, leadAssignee: item.leadAssignee, assignees: item.assignees })), consumableRequirements: saved.data.consumableRequirements.map((entry) => ({ publicId: entry.publicId, _baseVersion: entry.version, cataloguePublicId: entry.cataloguePublicId, description: entry.description, quantityRequired: entry.quantityRequired, unit: entry.unit })) };
+  const rejected = await request(`/api/work-packages/${loaded.publicId}/editor`, { method: 'PUT', body: invalid });
+  assert.equal(rejected.response.status, 422); assert.equal((await request(`/api/work-packages/${loaded.publicId}`)).data.title, 'Transactional fictional package');
+  workPackage = saved.data;
+});
+
+test('Phase 3 work-item completion, handover, package locks, reopening, and role rules are enforced', async () => {
+  let pack = (await request(`/api/work-packages/${workPackage.publicId}`)).data;
+  const item = pack.workItems.find((entry) => entry.itemReference === 'ITEM-TXN-2');
+  assert.equal((await request(`/api/work-packages/${pack.publicId}/completion`, { method: 'POST', body: { _baseVersion: pack.version } }, engineerCookie)).response.status, 403);
+  assert.equal((await request(`/api/work-packages/${pack.publicId}/completion`, { method: 'POST', body: { _baseVersion: pack.version } })).response.status, 409);
+  const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+  const packagePhoto = await request(`/api/photos/work_package/${pack.publicId}`, { method: 'POST', body: bytes, headers: { 'Content-Type': 'image/jpeg', 'X-Photo-Name': 'Fictional package handover', 'X-Photo-Description': 'Initial comment' } });
+  const itemPhoto = await request(`/api/photos/work_item/${item.publicId}`, { method: 'POST', body: bytes, headers: { 'Content-Type': 'image/jpeg', 'X-Photo-Name': 'Fictional item handover' } });
+  assert.equal(packagePhoto.response.status, 201); assert.equal(itemPhoto.response.status, 201);
+  const renamed = await request(`/api/photos/${itemPhoto.data.publicId}`, { method: 'PUT', body: { name: 'Renamed fictional handover', description: 'Reviewed comment', _baseVersion: itemPhoto.data.version } });
+  assert.equal(renamed.response.status, 200); assert.equal(renamed.data.description, 'Reviewed comment');
+  assert.equal((await request(`/api/photos/${itemPhoto.data.publicId}?baseVersion=${renamed.data.version}`, { method: 'DELETE' }, (await request('/api/auth/login', { method: 'POST', body: { username: 'viewer', password: VIEWER_TEST_PASSWORD } }, null)).response.headers.get('set-cookie').split(';')[0])).response.status, 403);
+  const completedItem = await request(`/api/work-packages/${pack.publicId}/work-items/${item.publicId}/completion`, { method: 'POST', body: { _baseVersion: item.version } }, engineerCookie);
+  assert.equal(completedItem.response.status, 200); const completed = completedItem.data.workItems.find((entry) => entry.publicId === item.publicId); assert.equal(completed.status, 'complete'); assert.ok(completed.completedAt); assert.equal(completed.completedBy.displayName, 'Demo engineer');
+  assert.equal((await request(`/api/work-packages/${pack.publicId}/work-items/${item.publicId}`, { method: 'PUT', body: { itemReference: item.itemReference, title: 'Rejected completed edit', description: item.description, status: 'active', sequence: item.sequence, leadAssignee: item.leadAssignee, assignees: item.assignees, _baseVersion: completed.version } })).response.status, 423);
+  assert.equal((await request(`/api/photos/${itemPhoto.data.publicId}`, { method: 'PUT', body: { name: 'Rejected completed handover edit', description: '', _baseVersion: renamed.data.version } })).response.status, 423);
+
+  pack = (await request(`/api/work-packages/${pack.publicId}`)).data;
+  for (const pending of pack.workItems.filter((entry) => !['complete', 'cancelled'].includes(entry.status))) {
+    pack = (await request(`/api/work-packages/${pack.publicId}/work-items/${pending.publicId}/completion`, { method: 'POST', body: { _baseVersion: pending.version } })).data;
+  }
+  const locked = await request(`/api/work-packages/${pack.publicId}/completion`, { method: 'POST', body: { _baseVersion: pack.version } });
+  assert.equal(locked.response.status, 200); assert.equal(locked.data.status, 'complete'); assert.ok(locked.data.completedBy);
+  assert.equal((await request(`/api/work-packages/${pack.publicId}/editor`, { method: 'PUT', body: { saveId: crypto.randomUUID(), _baseVersion: locked.data.version, packageReference: locked.data.packageReference, externalReference: locked.data.externalReference, projectReference: locked.data.projectReference, title: locked.data.title, description: locked.data.description, status: 'active', leadAssignee: locked.data.leadAssignee, assignees: locked.data.assignees, workItems: [], circuits: [], consumableRequirements: [] } })).response.status, 423);
+  assert.equal((await request(`/api/photos/work_package/${pack.publicId}`, { method: 'POST', body: bytes, headers: { 'Content-Type': 'image/jpeg', 'X-Photo-Name': 'Rejected after completion' } })).response.status, 423);
+  assert.equal((await request(`/api/photos/${packagePhoto.data.publicId}?baseVersion=${packagePhoto.data.version}`, { method: 'DELETE' })).response.status, 423);
+  assert.equal((await request(`/api/work-packages/${pack.publicId}/completion`, { method: 'DELETE', body: { _baseVersion: locked.data.version, status: 'active' } }, managerCookie)).response.status, 403);
+  const reopened = await request(`/api/work-packages/${pack.publicId}/completion`, { method: 'DELETE', body: { _baseVersion: locked.data.version, status: 'active' } });
+  assert.equal(reopened.response.status, 200); assert.equal(reopened.data.status, 'active'); assert.equal(reopened.data.completedAt, null);
+  assert.equal((await request(`/api/photos/${packagePhoto.data.publicId}?baseVersion=${packagePhoto.data.version}`, { method: 'DELETE' })).response.status, 204);
+  workPackage = reopened.data;
+});
+
+test('Phase 3 search ranks package, project, and linked work-item matches and groups completion state', async () => {
+  const packageMatch = (await request(`/api/search?q=${encodeURIComponent(workPackage.packageReference)}`)).data[0];
+  assert.equal(packageMatch.publicId, workPackage.publicId); assert.equal(packageMatch.matchType, 'package-reference'); assert.equal(packageMatch.group, 'active');
+  const projectMatch = (await request('/api/search?q=PROJECT-PHASE-THREE')).data[0]; assert.equal(projectMatch.matchType, 'project');
+  const childMatch = (await request('/api/search?q=Transactional%20child')).data[0]; assert.equal(childMatch.matchType, 'content'); assert.ok(childMatch.matchedWorkItems.some((item) => item.itemReference === 'ITEM-TXN-2'));
+});
+
 test('generic JSON and CSV exports are available without plugins and neutralize formula cells', async () => {
   const json = await request(`/api/work-packages/${workPackage.publicId}/export?format=json`);
   assert.equal(json.response.status, 200); assert.match(json.response.headers.get('content-disposition'), /attachment/);
   const csv = await request(`/api/work-packages/${workPackage.publicId}/export?format=csv`);
-  assert.equal(csv.response.status, 200); assert.match(csv.data, /record_type/); assert.match(csv.data, /SEGMENT-DEMO-1/);
+  assert.equal(csv.response.status, 200); assert.match(csv.data, /record_type/); assert.match(csv.data, /SEGMENT-DEMO-1/); assert.match(csv.data, /Transactional labels/);
+  const printable = await request(`/api/work-packages/${workPackage.publicId}/export?format=print`);
+  assert.equal(printable.response.status, 200); assert.match(printable.data, /Transactional fictional package/); assert.match(printable.data, /Save work package|Work items/);
 });
 
 test('photo metadata listing does not return image bytes', async () => {
