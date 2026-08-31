@@ -4,6 +4,12 @@ This checklist separates recorded owner decisions and the completed public-
 visibility event from formal human approvals that remain unrecorded. Codex
 assembled the evidence but is not a human approver.
 
+It also does not establish product parity or production readiness. Current
+workflow status is recorded in
+[`CORE_PARITY_INVENTORY.md`](CORE_PARITY_INVENTORY.md), where no end-to-end
+workflow is verified; release gates remain in
+[`CORE_PLUGIN_RECOVERY_GUIDE.md`](CORE_PLUGIN_RECOVERY_GUIDE.md).
+
 ## Public-visibility event
 
 - [x] GitHub records `scow92/TechSiteManager-Core` as public from 2026-08-29
