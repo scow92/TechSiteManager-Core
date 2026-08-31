@@ -185,7 +185,7 @@ async function captureResponsiveMatrix(page, base, shared) {
       await page.reload();
       await route(page, `${zero.base}/#home`, 'Home');
       await capture(page, 'dashboard-desktop-dark');
-      await page.getByLabel('Work Package Search').fill('ITEM-VISUAL-1');
+      await page.getByLabel('Search all records').fill('ITEM-VISUAL-1');
       await page.getByRole('link', { name: 'PKG-VISUAL-001', exact: true }).waitFor();
       await capture(page, 'search-results-desktop-dark');
 
@@ -253,7 +253,6 @@ async function captureResponsiveMatrix(page, base, shared) {
       await capture(page, 'import-provider-selection-desktop-dark');
       await page.getByLabel('Provider').selectOption('example.fictional-facility.json');
       await page.getByLabel('Source content').fill(fs.readFileSync(path.join(root, 'examples', 'fictional-plugin', 'example-plan.json'), 'utf8'));
-      await page.getByLabel('Stable source reference').fill('FICTIONAL-VISUAL-PLAN-001');
       await page.getByRole('button', { name: 'Validate and preview' }).click();
       await page.getByRole('heading', { name: 'Normalized preview', exact: true }).waitFor();
       await capture(page, 'import-preview-reconciliation-desktop-dark');

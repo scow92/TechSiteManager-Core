@@ -122,8 +122,14 @@ async function setup(page, base, suffix, emptyMessage = 'No active work packages
       await page.getByText('Work package saved').waitFor();
       await page.reload();
       assert.equal(await page.getByLabel('Title').inputValue(), 'Updated zero-plugin package');
-      await page.getByRole('link', { name: 'manage' }).click();
-      await page.getByRole('link', { name: 'OFFLINE-DEMO-01' }).click();
+      await page.locator('[data-route="home"]').click();
+      await page.getByLabel('Search all records').fill('PKG-ZERO-PLUGIN-01');
+      await page.getByRole('link', { name: 'PKG-ZERO-PLUGIN-01', exact: true }).click();
+      await page.getByRole('heading', { name: 'PKG-ZERO-PLUGIN-01' }).waitFor();
+      await page.locator('[data-route="home"]').click();
+      await page.getByLabel('Search all records').fill('Offline Demo Site');
+      await page.getByRole('link', { name: 'Offline Demo Site', exact: true }).click();
+      await page.getByRole('heading', { name: 'OFFLINE-DEMO-01 — Offline Demo Site', exact: true }).waitFor();
       await page.locator('[data-site-view="racks"]').click();
       await page.getByText('No racks recorded').waitFor();
       await page.locator('[data-site-view="distances"]').click();
@@ -140,7 +146,6 @@ async function setup(page, base, suffix, emptyMessage = 'No active work packages
       await page.getByLabel('Provider').selectOption('example.fictional-facility.json');
       const plan = fs.readFileSync(path.join(root, 'examples', 'fictional-plugin', 'example-plan.json'), 'utf8');
       await page.getByLabel('Source content').fill(plan);
-      await page.getByLabel('Stable source reference').fill('demo-facility-plan-001');
       await page.getByRole('button', { name: 'Validate and preview' }).click();
       await page.getByText('Normalized preview').waitFor();
       await page.getByRole('button', { name: 'Approve import' }).click();
@@ -157,7 +162,7 @@ async function setup(page, base, suffix, emptyMessage = 'No active work packages
       await page.getByRole('link', { name: 'PKG-DEMO-100', exact: true }).click();
       await page.getByRole('heading', { name: 'PKG-DEMO-100', exact: true }).waitFor();
       await page.locator('main').getByRole('link', { name: 'Home', exact: true }).click();
-      await page.getByLabel('Facility plan Search').fill('ITEM-DEMO-A');
+      await page.getByLabel('Search all records').fill('ITEM-DEMO-A');
       await page.getByRole('link', { name: 'PKG-DEMO-100', exact: true }).click();
       await page.getByRole('heading', { name: 'PKG-DEMO-100', exact: true }).waitFor();
 
@@ -175,12 +180,12 @@ async function setup(page, base, suffix, emptyMessage = 'No active work packages
       assert.equal(exported.status, 200); assert.match(exported.disposition, /PKG-DEMO-100\.facility\.json/); assert.equal(exported.body.segmentCount, 1);
 
       await page.locator('[data-route="home"]').click();
-      await page.getByLabel('Facility plan Search').fill('ITEM-DEMO-A');
+      await page.getByLabel('Search all records').fill('ITEM-DEMO-A');
       await page.getByRole('link', { name: 'PKG-DEMO-100', exact: true }).waitFor();
 
       await restart(fictional, 'zero-plugins');
       await page.reload();
-      await page.getByLabel('Work Package Search').fill('ITEM-DEMO-A');
+      await page.getByLabel('Search all records').fill('ITEM-DEMO-A');
       await page.getByRole('link', { name: 'PKG-DEMO-100', exact: true }).click();
       await page.getByRole('heading', { name: 'PKG-DEMO-100', exact: true }).waitFor();
       await page.locator('[data-route="import"]').click();

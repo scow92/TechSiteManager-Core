@@ -115,7 +115,15 @@ async function stage(registry, providerId, actorUserId, body) {
     }
     const draftHash = canonicalHash(draft);
     const reconciliation = await buildProposal(trx, source, draft);
-    const proposalWithIdentity = { ...reconciliation, draftId, draftHash };
+    const proposalWithIdentity = {
+      ...reconciliation, draftId, draftHash,
+      summary: {
+        siteCode: draft.target.siteCode,
+        siteName: draft.target.siteName,
+        packageReference: draft.workPackage.fields.packageReference?.value || null,
+        title: draft.workPackage.fields.title?.value || null
+      }
+    };
     await trx('import_drafts').insert({
       id: draftId, actor_user_id: actorUserId, provider_id: provider.id, draft_hash: draftHash,
       normalized_draft_json: boundedJson(draft, 'draft'), proposal_json: boundedJson(proposalWithIdentity, 'proposal'),

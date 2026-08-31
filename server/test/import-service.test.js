@@ -39,6 +39,7 @@ async function stage(plan) { return imports.stage(registry, 'example.fictional-f
 
 test('fictional import creates a complete generic package and provenance atomically', async () => {
   const proposal = await stage(basePlan);
+  assert.deepEqual(proposal.summary, { siteCode: 'LAB-01', siteName: 'Northwind Demo Lab', packageReference: 'PKG-DEMO-100', title: 'Demo lab cross-connects' });
   assert.equal(proposal.entityProposals.filter((entry) => entry.action === 'create').length, 4);
   const result = await imports.apply(registry, proposal.draftId, actorId, approval(proposal));
   assert.equal(result.status, 'applied');
