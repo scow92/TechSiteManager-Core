@@ -5,7 +5,24 @@ import { el, field } from '../dom.js';
 
 /** @param {ProviderDescriptor} descriptor */
 export function inputControl(descriptor) {
-  if (descriptor.input.type === 'file') return el('label', {}, 'Source file', el('input', { name: 'sourceFile', type: 'file', required: '', accept: descriptor.input.mediaTypes.join(',') }));
+  if (descriptor.input.type === 'file') {
+    const input = el('input', { class: 'import-file-input', name: 'sourceFile', type: 'file', required: '', accept: descriptor.input.mediaTypes.join(',') });
+    const selected = el('span', { class: 'drop-hint', 'data-selected-file': '' }, 'Excel workbook');
+    const dropzone = el('label', { class: 'import-dropzone' },
+      el('span', { class: 'drop-ico', 'aria-hidden': 'true' }, '⇧'),
+      el('strong', {}, 'Choose a spreadsheet or drag it here'), selected, input);
+    input.addEventListener('change', () => { selected.textContent = input.files?.[0]?.name || 'Excel workbook'; });
+    dropzone.addEventListener('dragover', (event) => { event.preventDefault(); dropzone.classList.add('drag'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+    dropzone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      dropzone.classList.remove('drag');
+      if (!event.dataTransfer?.files.length) return;
+      input.files = event.dataTransfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    return dropzone;
+  }
   if (descriptor.input.type === 'pasted-text') return el('label', {}, 'Source content', el('textarea', { name: 'sourceText', required: '' }));
   return el('label', {}, 'External source reference', el('input', { name: 'externalReference', required: '' }));
 }
@@ -38,5 +55,8 @@ export function providerFields(form) {
 
 /** @param {ProviderDescriptor} provider @param {HTMLElement} dynamic */
 export function renderDescriptorInputs(provider, dynamic) {
-  dynamic.replaceChildren(inputControl(provider), ...provider.input.fields.map(descriptorField), ...(provider.input.type === 'external-reference' ? [] : [field('Stable source reference (optional)', 'externalReference')]));
+  const required = provider.input.fields.filter((descriptor) => descriptor.required).map(descriptorField);
+  const optional = provider.input.fields.filter((descriptor) => !descriptor.required).map(descriptorField);
+  if (provider.input.type !== 'external-reference') optional.push(field('Stable source reference (optional)', 'externalReference'));
+  dynamic.replaceChildren(inputControl(provider), ...required, ...(optional.length ? [el('details', { class: 'import-advanced' }, el('summary', {}, 'Advanced options'), el('div', { class: 'stack' }, ...optional))] : []));
 }

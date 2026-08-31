@@ -86,15 +86,18 @@ it cannot supply missing executable behavior.
   presentation renderer.
   Evidence: existing browser and visual tests. This does not establish product
   parity.
-- [ ] **BASE-04** Replace the existing completion claims with an evidence-based
+- [x] **BASE-04** Replace the existing completion claims with an evidence-based
   capability inventory covering every workflow below.
+  Evidence: `e108e1c` adds the 34-workflow inventory and `ed1fdf6` qualifies
+  the plan, visual, release and readiness claims against it.
 - [ ] **BASE-05** Record formal technical, security, disclosure,
   organizational and product approval. Public visibility is not approval.
 
 ## Current next action
 
-The next item is **INVENTORY-03**. Add a failing fictional browser contract
-test for the first missing workflow slice before implementing that slice.
+Phase 1 is complete. The next item is **CORE-SITE-01**. Make the isolated red
+site workflow contract pass by implementing the complete browser, role,
+optimistic-conflict, persistence and applicable offline workflow.
 
 ### Phase 1 — Establish the public-safe parity inventory
 
@@ -112,10 +115,18 @@ test for the first missing workflow slice before implementing that slice.
   readiness across the plan, visual, release, deployment, publication,
   allowlist, licensing, and top-level status documents; each product-status
   claim points to `docs/CORE_PARITY_INVENTORY.md`.
-- [ ] **INVENTORY-03** Add failing fictional browser contract tests for the
+- [x] **INVENTORY-03** Add failing fictional browser contract tests for the
   first missing workflow slice before implementing it.
-- [ ] **INVENTORY-04** Agree the implementation order and migration strategy
+  Evidence: `48bf45f` adds the isolated `npm run test:contract:site` suite. Its
+  three fictional browser cases fail at the intentionally absent site edit,
+  scoped stale-conflict and explicit viewer read-only interactions; the green
+  release suite remains unchanged until `CORE-SITE-01` implements them.
+- [x] **INVENTORY-04** Agree the implementation order and migration strategy
   for existing candidate databases. Do not silently discard candidate data.
+  Evidence: `48bf45f` adds `docs/CANDIDATE_DATABASE_MIGRATION_STRATEGY.md`,
+  fixing the dependency order, recognized database states, immutable published
+  migrations, forward-only bridge, backup/rehearsal gates, browser-durability
+  boundary and restore-based rollback.
 
 ### Phase 2 — Restore complete site infrastructure workflows
 
@@ -318,3 +329,5 @@ Next unchecked item:
 | 2026-08-31 | Recovery decision | `6de4834` | Frozen original fixed at PR 23 commit `4bc778e9`; incomplete core parity acknowledged | INVENTORY-01 |
 | 2026-08-31 | INVENTORY-01 | `e108e1c` | Public-safe 34-workflow UI/API/persistence/offline/test matrix plus all 14 acceptance-flow roll-ups in `docs/CORE_PARITY_INVENTORY.md` | INVENTORY-02 |
 | 2026-08-31 | INVENTORY-02 | `ed1fdf6` | Qualified plan, visual, release, deployment, publication, allowlist, licensing and top-level status claims against `docs/CORE_PARITY_INVENTORY.md`; 6 missing, 28 partial and 0 verified end-to-end workflows remain | INVENTORY-03 |
+| 2026-08-31 | INVENTORY-03 | `48bf45f` | Isolated fictional site browser contract executes three expected-red cases for edit persistence, stale-conflict retention and viewer read-only behavior without weakening the green suite | INVENTORY-04 |
+| 2026-08-31 | INVENTORY-04 | `48bf45f` | Public candidate database states, forward-only preservation bridge, recovery order, evidence gates and restore-based rollback are fixed in `docs/CANDIDATE_DATABASE_MIGRATION_STRATEGY.md` | CORE-SITE-01 |

@@ -170,7 +170,7 @@ test('generic work package persists nested records and is searchable without plu
   assert.equal(summary.sitePublicId, site.publicId);
   for (const term of ['PKG-ROUTE-200', 'EXT-SEARCH-200', 'ITEM-SEARCH-1', 'PROJECT-COMET', 'LAB-ROUTE-01', 'Searchable generic']) {
     const search = await request(`/api/search?q=${encodeURIComponent(term)}`);
-    assert.equal(search.response.status, 200, term); assert.equal(search.data[0].publicId, workPackage.publicId, term);
+    assert.equal(search.response.status, 200, term); assert.equal(search.data[0].publicId, workPackage.publicId, term); assert.equal(search.data[0].sitePublicId, site.publicId, term);
   }
   for (const term of ['CIRCUIT-DEMO-1', 'SEGMENT-DEMO-1', 'demo-a:1']) {
     const search = await request(`/api/search?q=${encodeURIComponent(term)}`);
@@ -183,6 +183,7 @@ test('zero-plugin all-record search finds generic infrastructure', async () => {
     const search = await request(`/api/search?scope=all&q=${encodeURIComponent(term)}`);
     const result = search.data.find((entry) => entry.entityType === entityType);
     assert.equal(result.publicId, publicId, term);
+    assert.equal(result.sitePublicId, site.publicId, term);
   }
 });
 

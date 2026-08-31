@@ -434,11 +434,11 @@ router.get('/search', async (req, res, next) => {
       .leftJoin('circuits as c', 'c.work_package_id', 'w.id')
       .leftJoin('segments as g', 'g.circuit_id', 'c.id')
       .where((builder) => builder.whereRaw('lower(w.package_ref) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(w.external_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(w.project_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(w.title) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(w.description) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(s.code) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(s.name) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.item_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(i.description, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(c.circuit_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(c.description, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(g.segment_reference, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(g.from_endpoint, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(coalesce(g.to_endpoint, \'\')) LIKE ? ESCAPE \'\\\'', [pattern]))
-      .distinct('w.public_id', 'w.package_ref', 'w.external_reference', 'w.project_reference', 'w.title', 'w.status', 's.code as site_code', 's.name as site_name').limit(100);
-    const results = rows.map((row) => ({ entityType: 'work_package', publicId: row.public_id, packageReference: row.package_ref, externalReference: row.external_reference, projectReference: row.project_reference, title: row.title, status: row.status, siteCode: row.site_code, siteName: row.site_name }));
+      .distinct('w.public_id', 'w.package_ref', 'w.external_reference', 'w.project_reference', 'w.title', 'w.status', 's.public_id as site_public_id', 's.code as site_code', 's.name as site_name').limit(100);
+    const results = rows.map((row) => ({ entityType: 'work_package', publicId: row.public_id, packageReference: row.package_ref, externalReference: row.external_reference, projectReference: row.project_reference, title: row.title, status: row.status, sitePublicId: row.site_public_id, siteCode: row.site_code, siteName: row.site_name }));
     if (scope === 'all' && results.length < 100) {
       const siteRows = await db('sites').where((builder) => builder.whereRaw('lower(code) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(name) LIKE ? ESCAPE \'\\\'', [pattern]).orWhereRaw('lower(description) LIKE ? ESCAPE \'\\\'', [pattern])).limit(100);
-      results.push(...siteRows.map((row) => ({ entityType: 'site', publicId: row.public_id, title: row.name, reference: row.code, description: row.description, siteCode: row.code })));
+      results.push(...siteRows.map((row) => ({ entityType: 'site', publicId: row.public_id, title: row.name, reference: row.code, description: row.description, sitePublicId: row.public_id, siteCode: row.code, siteName: row.name })));
       const infrastructure = [
         ['room', 'rooms', ['e.name', 'e.description'], 'e.name'],
         ['rack', 'racks', ['e.label', 'e.suite_line'], 'e.label'],
@@ -449,8 +449,8 @@ router.get('/search', async (req, res, next) => {
       for (const [entityType, table, columns, titleColumn] of infrastructure) {
         const matches = await db(`${table} as e`).join('sites as s', 's.id', 'e.site_id').where((builder) => {
           columns.forEach((column, index) => builder[index ? 'orWhereRaw' : 'whereRaw'](`lower(coalesce(${column}, '')) LIKE ? ESCAPE '\\'`, [pattern]));
-        }).select('e.public_id', 's.code as site_code', 's.name as site_name', db.raw(`${titleColumn} as result_title`)).limit(100);
-        results.push(...matches.map((row) => ({ entityType, publicId: row.public_id, title: row.result_title, siteCode: row.site_code, siteName: row.site_name })));
+        }).select('e.public_id', 's.public_id as site_public_id', 's.code as site_code', 's.name as site_name', db.raw(`${titleColumn} as result_title`)).limit(100);
+        results.push(...matches.map((row) => ({ entityType, publicId: row.public_id, title: row.result_title, sitePublicId: row.site_public_id, siteCode: row.site_code, siteName: row.site_name })));
       }
     }
     res.json(results.slice(0, 100));

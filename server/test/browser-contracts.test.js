@@ -17,7 +17,7 @@ test('service worker shell exactly covers HTML static dependencies and excludes 
     .filter((file) => String(file).endsWith('.js') && !['idb.js', 'offline.js'].includes(String(file)))
     .map((file) => `/js/${String(file).replaceAll(path.sep, '/')}`);
   for (const url of moduleFiles) assert.match(worker, new RegExp(url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(worker, /techsitemanager-shell-v7/);
+  assert.match(worker, /techsitemanager-shell-v8/);
   assert.doesNotMatch(worker, /\/js\/app\.js/);
   assert.match(worker, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.doesNotMatch(worker, /\/api\/[A-Za-z]/);
