@@ -1,4 +1,5 @@
 import type {
+  ExportProjectionV1Exporter,
   ImportProvider,
   PluginManifest,
   PluginPackage
@@ -36,3 +37,21 @@ const invalidContribution: PluginPackage = {
 };
 
 void invalidContribution;
+
+const projectionExporter: ExportProjectionV1Exporter = {
+  id: 'example.contract-projection',
+  label: 'Contract projection',
+  mediaType: 'application/json',
+  fileExtension: '.json',
+  maxBytes: 1024,
+  projectionVersion: 'techsitemanager.io/export-projection/v1',
+  export: async (projection) => ({
+    content: Buffer.from(JSON.stringify({
+      schemaVersion: projection.schemaVersion,
+      packageReference: projection.workPackage.packageReference,
+      rackCount: projection.site.racks.length
+    }))
+  })
+};
+
+void projectionExporter;

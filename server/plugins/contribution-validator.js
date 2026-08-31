@@ -119,11 +119,17 @@ function stageContributions(plugin, manifest, resolved, packageName, instanceCon
 
   for (const value of contributionArray(plugin, 'exporters', manifest.id)) {
     const exporter = plainRecord(value, 'plugin_exporter_invalid');
-    if (Object.keys(exporter).some((key) => !['id', 'label', 'mediaType', 'fileExtension', 'maxBytes', 'export'].includes(key))) throw pluginError('plugin_exporter_invalid', manifest.id);
+    if (Object.keys(exporter).some((key) => !['id', 'label', 'mediaType', 'fileExtension', 'maxBytes', 'projectionVersion', 'export'].includes(key))) throw pluginError('plugin_exporter_invalid', manifest.id);
     const exporterId = assertId(exporter.id, 'plugin_exporter_id_invalid');
     if (typeof exporter.label !== 'string' || !exporter.label || exporter.label.length > 100 || typeof exporter.mediaType !== 'string' || !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(exporter.mediaType) || typeof exporter.fileExtension !== 'string' || !/^\.[a-z0-9][a-z0-9.-]{0,19}$/i.test(exporter.fileExtension) || exporter.fileExtension.includes('..') || typeof exporter.export !== 'function' || typeof exporter.maxBytes !== 'number' || !Number.isInteger(exporter.maxBytes) || exporter.maxBytes < 1 || exporter.maxBytes > 10 * 1024 * 1024) throw pluginError('plugin_exporter_invalid', manifest.id);
+    if (exporter.projectionVersion !== undefined && (manifest.apiVersion !== 2 || exporter.projectionVersion !== 'techsitemanager.io/export-projection/v1')) throw pluginError('plugin_export_projection_invalid', manifest.id);
     if (staged.exporters.has(exporterId)) throw pluginError('duplicate_exporter_id', exporterId);
-    staged.exporters.set(exporterId, deepFreeze({ id: exporterId, label: exporter.label, mediaType: exporter.mediaType, fileExtension: exporter.fileExtension, maxBytes: exporter.maxBytes, export: /** @type {import('techsitemanager/plugin-api').Exporter['export']} */ (exporter.export), pluginId: manifest.id }));
+    const common = { id: exporterId, label: exporter.label, mediaType: exporter.mediaType, fileExtension: exporter.fileExtension, maxBytes: exporter.maxBytes, pluginId: manifest.id };
+    /** @type {import('techsitemanager/plugin-api').LoadedExporter} */
+    const loaded = exporter.projectionVersion
+      ? { ...common, projectionVersion: 'techsitemanager.io/export-projection/v1', export: /** @type {import('techsitemanager/plugin-api').ExportProjectionV1Exporter['export']} */ (exporter.export) }
+      : { ...common, export: /** @type {import('techsitemanager/plugin-api').WorkPackageExporter['export']} */ (exporter.export) };
+    staged.exporters.set(exporterId, deepFreeze(loaded));
   }
   return staged;
 }

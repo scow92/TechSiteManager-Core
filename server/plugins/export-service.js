@@ -3,6 +3,7 @@
 const config = require('../config');
 const { packageDetail } = require('../lib/work-packages');
 const { httpError } = require('../lib/errors');
+const exportProjections = require('./export-projections');
 
 /** @template T @param {T} value @returns {Readonly<T>} */
 function deepFreeze(value) {
@@ -13,16 +14,16 @@ function deepFreeze(value) {
 
 /**
  * @param {import('techsitemanager/plugin-api').LoadedExporter} exporter
- * @param {import('techsitemanager/plugin-api').WorkPackageProjection} workPackage
+ * @param {import('techsitemanager/plugin-api').WorkPackageProjection | import('techsitemanager/plugin-api').ExportProjectionV1} projection
  * @returns {Promise<Buffer>}
  */
-async function callExporter(exporter, workPackage) {
+async function callExporter(exporter, projection) {
   const controller = new AbortController();
   /** @type {NodeJS.Timeout | undefined} */
   let timer;
   try {
     const result = await Promise.race([
-      Promise.resolve().then(() => exporter.export(deepFreeze(structuredClone(workPackage)), Object.freeze({ abortSignal: controller.signal }))),
+      Promise.resolve().then(() => exporter.export(/** @type {never} */ (deepFreeze(structuredClone(projection))), Object.freeze({ abortSignal: controller.signal }))),
       new Promise((/** @type {(value: never) => void} */ _, reject) => {
         timer = setTimeout(() => {
           controller.abort();
@@ -55,8 +56,20 @@ function safeBaseName(value) {
 async function generate(registry, exporterId, workPackagePublicId) {
   const exporter = registry.exporter(exporterId);
   if (!exporter) throw httpError(404, 'exporter_not_found', 'Exporter not found');
-  const workPackage = await packageDetail(workPackagePublicId);
-  const content = await callExporter(exporter, workPackage);
+  let workPackage;
+  let projection;
+  if (exporter.projectionVersion === exportProjections.SCHEMA_VERSION) {
+    const providerIds = registry.providers.flatMap((descriptor) => {
+      const provider = registry.provider(descriptor.id);
+      return provider && provider.pluginId === exporter.pluginId ? [provider.id] : [];
+    });
+    projection = await exportProjections.buildV1(workPackagePublicId, { pluginId: exporter.pluginId, providerIds, maxRecords: config.exportProjectionMaxRecords });
+    workPackage = projection.workPackage;
+  } else {
+    workPackage = await packageDetail(workPackagePublicId);
+    projection = workPackage;
+  }
+  const content = await callExporter(exporter, projection);
   return { content, mediaType: exporter.mediaType, fileName: `${safeBaseName(workPackage.packageReference)}${exporter.fileExtension}` };
 }
 

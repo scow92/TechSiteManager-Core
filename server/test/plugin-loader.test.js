@@ -89,6 +89,22 @@ test('unknown contribution fields and duplicate IDs within one package are rejec
   assert.throws(() => loadPlugins({ configFile: config(root, [{ package: 'fixture-strict', required: true }]), searchRoot: root }), { code: 'duplicate_provider_id' });
 });
 
+test('only Plugin API V2 exporters may request the exact V1 export projection', () => {
+  const root = temporaryRoot();
+  const packageRoot = packageFixture(root, 'fixture-projection', { manifest: { apiVersion: 2, id: 'fixture.projection', version: '1.0.0', coreCompatibility: '>=1.0.0-rc.1 <2.0.0' } });
+  const exporter = "exporters:[{id:'fixture.projection.export',label:'Projection export',mediaType:'application/json',fileExtension:'.json',maxBytes:1024,projectionVersion:'techsitemanager.io/export-projection/v1',export:async()=>({content:Buffer.from('{}')})}]";
+  fs.writeFileSync(path.join(packageRoot, 'index.cjs'), `module.exports={manifest:{apiVersion:2,id:'fixture.projection',version:'1.0.0',coreCompatibility:'>=1.0.0-rc.1 <2.0.0'},${exporter}};`);
+  let registry = loadPlugins({ configFile: config(root, [{ package: 'fixture-projection', required: true }]), searchRoot: root });
+  assert.equal(registry.exporter('fixture.projection.export').projectionVersion, 'techsitemanager.io/export-projection/v1');
+  fs.writeFileSync(path.join(packageRoot, 'index.cjs'), `module.exports={manifest:{apiVersion:2,id:'fixture.projection',version:'1.0.0',coreCompatibility:'>=1.0.0-rc.1 <2.0.0'},${exporter.replace('techsitemanager.io/export-projection/v1', 'techsitemanager.io/export-projection/v2')}};`);
+  delete require.cache[path.join(packageRoot, 'index.cjs')];
+  assert.throws(() => loadPlugins({ configFile: config(root, [{ package: 'fixture-projection', required: true }]), searchRoot: root }), { code: 'plugin_export_projection_invalid' });
+  fs.writeFileSync(path.join(packageRoot, 'index.cjs'), `module.exports={manifest:{apiVersion:1,id:'fixture.projection',version:'1.0.0',coreCompatibility:'>=1.0.0-rc.1 <2.0.0'},${exporter}};`);
+  delete require.cache[path.join(packageRoot, 'index.cjs')];
+  assert.throws(() => loadPlugins({ configFile: config(root, [{ package: 'fixture-projection', required: true }]), searchRoot: root }), { code: 'plugin_export_projection_invalid' });
+  registry = null;
+});
+
 test('package names are exact and reject paths, URLs, and package-root escape', () => {
   const root = temporaryRoot();
   for (const name of ['../fixture', '/tmp/fixture', 'https://invalid.test/pkg', 'git+ssh://invalid/pkg']) {

@@ -49,7 +49,8 @@ const config = Object.freeze({
   maxBackupAgeMs: integer('MAX_BACKUP_AGE_HOURS', 24, 1, 24 * 365) * 60 * 60 * 1000,
   shutdownTimeoutMs: integer('SHUTDOWN_TIMEOUT_MS', 10_000, 100, 120_000),
   draftTtlMs: integer('IMPORT_DRAFT_TTL_MS', 30 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-  pluginTimeoutMs: integer('PLUGIN_TIMEOUT_MS', 30_000, 100, 120_000)
+  pluginTimeoutMs: integer('PLUGIN_TIMEOUT_MS', 30_000, 100, 120_000),
+  exportProjectionMaxRecords: integer('EXPORT_PROJECTION_MAX_RECORDS', 20_000, 1, 100_000)
 });
 
 if (!['development', 'test', 'production'].includes(config.environment)) throw new Error('Invalid NODE_ENV');
