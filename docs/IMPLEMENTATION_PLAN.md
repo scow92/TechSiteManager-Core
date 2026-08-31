@@ -9,7 +9,7 @@ specific historical verification activity. They do **not** assert a complete
 browser workflow, frozen-product parity, formal approval, or production
 readiness. The authoritative layer-by-layer status is
 [`CORE_PARITY_INVENTORY.md`](CORE_PARITY_INVENTORY.md): 6 workflows are
-missing, 28 are partial, and 0 are verified end to end. The recovery order and
+missing, 16 are partial, and 12 are verified end to end. The recovery order and
 acceptance gates are tracked in
 [`CORE_PLUGIN_RECOVERY_GUIDE.md`](CORE_PLUGIN_RECOVERY_GUIDE.md).
 
@@ -39,6 +39,10 @@ acceptance gates are tracked in
   optimistic-concurrency coverage across the generic routes.
 - [x] Extend zero-plugin search across generic infrastructure and package child
   records.
+- [x] Restore the transactional work-package graph editor, assignments,
+  work-item and administrator completion, handover galleries, ranked search,
+  complete generic/print exports, optimistic conflict recovery and durable
+  package replay (`W09`–`W15`).
 - [x] Add login throttling without account-existence disclosure.
 - [x] Add shell navigation and selected route-level authorization regression
   coverage. Complete browser interactions and the product-wide role/state
@@ -71,8 +75,9 @@ acceptance gates are tracked in
 
 - [x] Keep API traffic out of the service-worker cache.
 - [x] Define IndexedDB stores for disposable caches, durable operations, dead
-  letters, dirty packages, ID remaps, and pending logout. The dirty-package
-  store and most mutation queues are not connected to browser workflows.
+  letters, dirty packages, ID remaps, and pending logout. Package graphs and
+  selected infrastructure workflows are connected; later workflow coverage
+  remains incomplete.
 - [x] Implement and unit-test generic FIFO replay, response classification,
   queued dependencies, dead letters, ID remaps, and pending-logout recovery.
   Product-wide offline durability remains partial (`W28`).
@@ -117,8 +122,9 @@ acceptance gates are tracked in
   desktop, tablet, mobile, dark/light, offline, and reconciliation states.
 - [x] Implement project-style Home hierarchy, contextual navigation, sectioned
   package layouts, read-only rack previews, and import result actions while
-  retaining generic terminology and server-only providers. These are visual
-  foundations; the related product workflows remain partial or missing.
+  retaining generic terminology and server-only providers. Package interactions
+  are now verified separately; the remaining pages are still governed by the
+  inventory rather than screenshot presence.
 - [x] Enforce deterministic perceptual-drift thresholds for Home and package
   details across phone portrait/landscape, tablet portrait/landscape, and
   desktop in both themes, plus selected desktop-only route captures. This is
