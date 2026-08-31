@@ -1,6 +1,6 @@
 export interface User { readonly publicId: string; readonly username: string; readonly displayName: string; readonly email: string | null; readonly role: 'admin' | 'manager' | 'engineer' | 'viewer'; readonly active: boolean; readonly version: number; }
 export interface AuthStatus { readonly user: User | null; readonly setupNeeded: boolean; }
-export interface Site { readonly publicId: string; readonly code: string; readonly name: string; readonly description: string; }
+export interface Site { readonly publicId: string; readonly code: string; readonly name: string; readonly description: string; readonly version: number; }
 export interface ExporterDescriptor { readonly id: string; readonly label: string; }
 export interface PresentationField { readonly id: string; readonly entityType: 'work-package' | 'work-item' | 'circuit' | 'segment' | 'consumable-requirement'; readonly binding: string; readonly label: string; readonly type: 'string' | 'multiline' | 'date' | 'integer' | 'decimal' | 'boolean' | 'enum'; readonly required: boolean; readonly wide: boolean; readonly maxLength: number; readonly options: readonly string[]; }
 export interface PresentationSection { readonly id: string; readonly label: string; readonly hint: string; readonly fields: readonly string[]; }

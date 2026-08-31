@@ -86,6 +86,7 @@ async function login(role) {
 
 async function beginSiteEdit(page) {
   await page.goto(`${instance.base}/#site/${sitePublicId}`);
+  await page.reload();
   await page.getByRole('heading', { name: /SITE-DEMO-01/ }).waitFor();
   await page.getByRole('button', { name: 'Edit site' }).click();
 }
@@ -173,4 +174,84 @@ test('viewer sees an explicit read-only site and no mutation control', async () 
   await viewer.page.getByRole('heading', { name: /SITE-DEMO-01/ }).waitFor();
   await viewer.page.getByText('Read-only access', { exact: true }).waitFor();
   assert.equal(await viewer.page.getByRole('button', { name: 'Edit site' }).count(), 0);
+});
+
+test('offline site edits are durable, coalesced, and replay after reconnection', async () => {
+  await beginSiteEdit(engineer.page);
+  await engineer.page.evaluate(() => navigator.serviceWorker.ready);
+  await engineer.context.setOffline(true);
+  try {
+    await engineer.page.getByLabel('Description').fill('First fictional offline site draft.');
+    await engineer.page.getByRole('button', { name: 'Save site' }).click();
+    await engineer.page.getByText('Site update queued for sync', { exact: true }).waitFor();
+    await engineer.page.getByRole('heading', { name: 'Site update pending', exact: true }).waitFor();
+
+    await engineer.page.getByRole('button', { name: 'Edit site' }).click();
+    const finalDraft = 'Final fictional offline site draft retained across reload.';
+    await engineer.page.getByLabel('Description').fill(finalDraft);
+    const secondSave = engineer.page.getByRole('button', { name: 'Save site' });
+    await secondSave.click();
+    await engineer.page.waitForFunction((expected) => globalThis.OfflineStore.all('operation-queue').then((items) => items.some((item) => item.operationKey?.startsWith('site:update:') && JSON.parse(item.body).description === expected)), finalDraft);
+    await secondSave.waitFor({ state: 'detached' });
+    const queued = await engineer.page.evaluate(() => globalThis.OfflineStore.all('operation-queue').then((items) => items.filter((item) => item.operationKey?.startsWith('site:update:'))));
+    assert.equal(queued.length, 1);
+    assert.equal(JSON.parse(queued[0].body).description, finalDraft);
+
+    await engineer.page.reload();
+    await engineer.page.getByRole('heading', { name: 'Site update pending', exact: true }).waitFor();
+    const reloadedQueue = await engineer.page.evaluate(() => globalThis.OfflineStore.all('operation-queue'));
+    assert.equal(reloadedQueue.length, 1);
+    assert.equal(reloadedQueue[0].operationKey, `site:update:${sitePublicId}`);
+    await engineer.page.getByRole('button', { name: 'Edit site' }).click();
+    assert.equal(await engineer.page.getByLabel('Description').inputValue(), finalDraft);
+
+    await engineer.context.setOffline(false);
+    await engineer.page.evaluate(() => globalThis.OfflineSync.replay(globalThis.OfflineStore, globalThis.fetch));
+    await engineer.page.waitForFunction(async ({ publicId, expected }) => {
+      const sites = await (await fetch('/api/sites')).json();
+      return sites.find((entry) => entry.publicId === publicId)?.description === expected;
+    }, { publicId: sitePublicId, expected: finalDraft });
+    const remaining = await engineer.page.evaluate(() => globalThis.OfflineStore.all('operation-queue'));
+    assert.deepEqual(remaining, []);
+    const rejected = await engineer.page.evaluate(() => globalThis.OfflineStore.all('dead-letters'));
+    assert.deepEqual(rejected, []);
+    const saved = await engineer.page.evaluate(async (publicId) => (await (await fetch('/api/sites')).json()).find((entry) => entry.publicId === publicId), sitePublicId);
+    assert.equal(saved.description, finalDraft);
+    await engineer.page.reload();
+    await engineer.page.getByRole('button', { name: 'Edit site' }).click();
+    assert.equal(await engineer.page.getByLabel('Description').inputValue(), finalDraft);
+  } finally {
+    await engineer.context.setOffline(false);
+  }
+});
+
+test('an offline stale edit is scoped to the site and can be reviewed before reapplying', async () => {
+  await beginSiteEdit(engineer.page);
+  await engineer.context.setOffline(true);
+  const retainedDraft = 'Fictional offline conflict draft chosen after review.';
+  try {
+    await engineer.page.getByLabel('Description').fill(retainedDraft);
+    await engineer.page.getByRole('button', { name: 'Save site' }).click();
+    await engineer.page.getByText('Site update queued for sync', { exact: true }).waitFor();
+
+    await beginSiteEdit(administrator.page);
+    await administrator.page.getByLabel('Description').fill('Fictional server edit made before offline replay.');
+    await administrator.page.getByRole('button', { name: 'Save site' }).click();
+    await administrator.page.getByText('Site saved', { exact: true }).waitFor();
+
+    await engineer.context.setOffline(false);
+    await engineer.page.getByRole('heading', { name: 'Site update needs review', exact: true }).waitFor();
+    assert.equal(await engineer.page.evaluate(() => globalThis.OfflineStore.all('dead-letters').then((items) => items.filter((item) => item.entityType === 'site').length)), 1);
+    await engineer.page.getByRole('button', { name: 'Review offline draft' }).click();
+    assert.equal(await engineer.page.getByLabel('Description').inputValue(), retainedDraft);
+    await engineer.page.getByRole('button', { name: 'Save site' }).click();
+    await engineer.page.getByText('Site saved', { exact: true }).waitFor();
+    assert.equal(await engineer.page.evaluate(() => globalThis.OfflineStore.all('dead-letters').then((items) => items.filter((item) => item.entityType === 'site').length)), 0);
+
+    await administrator.page.reload();
+    await administrator.page.getByRole('button', { name: 'Edit site' }).click();
+    assert.equal(await administrator.page.getByLabel('Description').inputValue(), retainedDraft);
+  } finally {
+    await engineer.context.setOffline(false);
+  }
 });

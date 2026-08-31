@@ -83,7 +83,10 @@ router.put('/sites/:publicId', auth.requireWrite, async (req, res, next) => {
       if (!count) {
         const current = await trx('sites').where({ public_id: req.params.publicId }).first();
         if (!current) throw httpError(404, 'site_not_found', 'Site not found');
-        throw httpError(409, 'version_conflict', 'The site changed since it was loaded');
+        if (current.version === requestedVersion + 1 && current.code === changes.code && current.name === changes.name && current.description === changes.description) return current;
+        const conflict = httpError(409, 'version_conflict', 'The site changed since it was loaded');
+        conflict.serverVersion = current.version;
+        throw conflict;
       }
       await audit.record(trx, req.user.id, 'site.update', 'site', req.params.publicId);
       return trx('sites').where({ public_id: req.params.publicId }).first();

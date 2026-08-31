@@ -145,6 +145,15 @@ test('generic site, room, rack, termination point, device, distance, and catalog
 });
 
 test('generic infrastructure and catalogue updates use optimistic concurrency', async () => {
+  const siteBody = { code: site.code, name: 'Updated Fictional Route Lab', description: site.description, _baseVersion: site.version };
+  const siteWinner = await request(`/api/sites/${site.publicId}`, { method: 'PUT', body: siteBody });
+  assert.equal(siteWinner.response.status, 200); assert.equal(siteWinner.data.version, site.version + 1);
+  const siteRetry = await request(`/api/sites/${site.publicId}`, { method: 'PUT', body: siteBody });
+  assert.equal(siteRetry.response.status, 200); assert.equal(siteRetry.data.version, siteWinner.data.version);
+  const siteStale = await request(`/api/sites/${site.publicId}`, { method: 'PUT', body: { ...siteBody, description: 'Divergent stale site edit' } });
+  assert.equal(siteStale.response.status, 409); assert.equal(siteStale.data.code, 'version_conflict'); assert.equal(siteStale.data.serverVersion, siteWinner.data.version);
+  site = siteWinner.data;
+
   const body = { label: rack.label, suiteLine: 'B', sizeUnits: rack.sizeUnits, roomPublicId: room.publicId, _baseVersion: rack.version };
   const winner = await request(`/api/sites/${site.publicId}/racks/${rack.publicId}`, { method: 'PUT', body });
   assert.equal(winner.response.status, 200); assert.equal(winner.data.suiteLine, 'B');
