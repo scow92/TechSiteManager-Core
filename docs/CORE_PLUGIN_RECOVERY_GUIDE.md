@@ -95,9 +95,9 @@ it cannot supply missing executable behavior.
 
 ## Current next action
 
-Phase 1 is complete. The next item is **CORE-SITE-01**. Make the isolated red
-site workflow contract pass by implementing the complete browser, role,
-optimistic-conflict, persistence and applicable offline workflow.
+Phase 1 and `CORE-SITE-01` are complete. The next item is **CORE-RACK-01**.
+Implement the canonical room-owned rack browser workflow, including duplicate
+and suite-line decisions, concurrency, persistence and offline replay.
 
 ### Phase 1 — Establish the public-safe parity inventory
 
@@ -130,8 +130,13 @@ optimistic-conflict, persistence and applicable offline workflow.
 
 ### Phase 2 — Restore complete site infrastructure workflows
 
-- [ ] **CORE-SITE-01** Provide complete site create, read, update, search and
+- [x] **CORE-SITE-01** Provide complete site create, read, update, search and
   optimistic-conflict workflows with admin/engineer/viewer behavior.
+  Evidence: `f8b7ca0` adds the browser editor/read-only states, retained and
+  resolvable stale drafts, idempotent optimistic retry, durable coalesced site
+  updates, scoped offline conflict review and five green fictional browser
+  contract cases. All required core, browser, visual, disclosure, licence and
+  package checks passed; no server database migration was required.
 - [ ] **CORE-RACK-01** Add and edit canonical racks from the browser, including
   room ownership, default height, suite-line inference/confirmation, duplicate
   handling, concurrency and offline replay.
@@ -331,3 +336,4 @@ Next unchecked item:
 | 2026-08-31 | INVENTORY-02 | `ed1fdf6` | Qualified plan, visual, release, deployment, publication, allowlist, licensing and top-level status claims against `docs/CORE_PARITY_INVENTORY.md`; 6 missing, 28 partial and 0 verified end-to-end workflows remain | INVENTORY-03 |
 | 2026-08-31 | INVENTORY-03 | `48bf45f` | Isolated fictional site browser contract executes three expected-red cases for edit persistence, stale-conflict retention and viewer read-only behavior without weakening the green suite | INVENTORY-04 |
 | 2026-08-31 | INVENTORY-04 | `48bf45f` | Public candidate database states, forward-only preservation bridge, recovery order, evidence gates and restore-based rollback are fixed in `docs/CANDIDATE_DATABASE_MIGRATION_STRATEGY.md` | CORE-SITE-01 |
+| 2026-08-31 | CORE-SITE-01 | `f8b7ca0` | Five-case site contract passes edit persistence, viewer state, online conflicts, durable/coalesced replay and offline conflict review; full unit, e2e, visual, disclosure, history, licence and package checks pass; IndexedDB advances to v3 with no server migration | CORE-RACK-01 |

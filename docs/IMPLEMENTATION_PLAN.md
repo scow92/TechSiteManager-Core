@@ -42,7 +42,8 @@ acceptance gates are tracked in
 - [x] Add login throttling without account-existence disclosure.
 - [x] Add shell navigation and selected route-level authorization regression
   coverage. Complete browser interactions and the product-wide role/state
-  matrix remain partial (`W01`, `W02`, `W23`, and `W31` in the inventory).
+  matrix remain partial (`W01`, `W23`, and `W31` in the inventory); the isolated
+  site workflow in `W02` is verified.
 
 ## Plugin and import contract
 

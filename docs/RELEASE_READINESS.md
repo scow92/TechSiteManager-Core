@@ -145,8 +145,8 @@ candidate and passed when temporary writable caches were configured.
 
 ## Known limitations and manual review
 
-- The parity inventory records 6 missing and 28 partial workflows, with no
-  verified end-to-end product flow.
+- The parity inventory records 6 missing, 27 partial, and 1 verified detailed
+  workflow. No critical `FLOW-*` acceptance item is verified end to end.
 - Plugins are trusted in-process code, not sandboxes.
 - The build-stage Node image is selected by a release tag; the successful
   build resolved that tag to an immutable digest recorded in the build log.

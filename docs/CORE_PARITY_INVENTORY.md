@@ -62,7 +62,7 @@ copy into the public repository.
 | --- | --- |
 | U1 | `public/index.html`; `public/js/main.js` — native-module shell, hash routing, context selectors and theme. |
 | U2 | `public/js/views/home.js` — site/package search, creation and active/completed lists. |
-| U3 | `public/js/views/sites.js` — site creation plus read-only infrastructure lists and rack previews. |
+| U3 | `public/js/views/sites.js` — site creation/editing, explicit role states, scoped conflict recovery, read-only infrastructure lists and rack previews. |
 | U4 | `public/js/views/work-package.js` — explicit package save and generic child/circuit/requirement creation. |
 | U5 | `public/js/presentation.js` — core-owned record, child-tab, connection-table, requirement and material renderers. |
 | U6 | `public/js/views/import.js`; `public/js/import/descriptors.js`; `public/js/import/reconciliation.js` — provider inputs, preview, decisions and apply. |
@@ -92,14 +92,14 @@ group.
 | T3 | `server/test/core-routes.test.js` — `zero-plugin all-record search finds generic infrastructure`; `generic JSON and CSV exports are available without plugins and neutralize formula cells`; `photo metadata listing does not return image bytes`. |
 | T4 | `server/test/core-routes.test.js` — `setup, authentication, role authorization, and session revocation work`; `writer roles can mutate core records but administrator boundaries remain enforced`; `user administration is concurrent, audited, and preserves an active administrator`. |
 | T5 | `server/test/core-routes.test.js` — `origin checks, security headers, and public errors do not leak internals`; `generic mutations create sanitized audit events`. |
-| T6 | `server/test/offline-replay.test.js` — `FIFO replay durably remaps a temporary identity for dependent operations`; transient/unclassified retention; recoverable dead letters. |
-| T7 | `server/test/browser-contracts.test.js` — exact shell coverage, network-first same-origin behavior, separated durable stores and logout-before-restore. |
+| T6 | `server/test/offline-replay.test.js` — FIFO identity remapping, transient/unclassified retention, recoverable dead letters, scoped optimistic-conflict details and serialized replay. |
+| T7 | `server/test/browser-contracts.test.js` — exact shell coverage, network-first same-origin behavior, separated durable stores with completion guards, and logout-before-restore. |
 | T8 | `server/test/e2e.playwright.js` — `PASS zero-plugin browser flow`; `PASS fictional-plugin import, navigation, reload and zero-plugin restart flow`. |
 | T9 | `server/test/import-service.test.js` — atomic fictional import, no raw-source retention, idempotence, stable reordering, ownership conflicts, recoverable absence, stale/cancelled rejection and rollback. |
 | T10 | `server/test/plugin-loader.test.js`; `server/test/plugin-modules.test.js`; `server/test/presentation-values.test.js` — zero-plugin startup, bounded contributions, presentation validation and typed extension concurrency. |
 | T11 | `server/test/recovery.test.js` — `fresh generic baseline installs with integrity and no legacy migration history`; `SQLite-safe backup and restore preserve generic records and provenance`; overwrite/live-directory refusal. |
 | T12 | `server/test/visual-parity.playwright.js` — desktop route captures and the home/package-details dark/light matrix at desktop, tablet portrait/landscape and phone portrait/landscape sizes. |
-| T13 | `server/test/site-workflow.contract.js` — isolated, intentionally failing fictional browser contracts for site edit persistence, stale-edit conflict retention, and explicit viewer read-only behavior. Run with `npm run test:contract:site`; it remains outside the green release suite until `CORE-SITE-01` implements the workflow. |
+| T13 | `server/test/site-workflow.contract.js` — five passing fictional browser contracts for edit persistence, stale-draft retention, explicit viewer read-only behavior, durable/coalesced offline replay and scoped offline conflict review/reapply. Run with `npm run test:contract:site`. |
 
 ## Workflow matrix
 
@@ -108,7 +108,7 @@ group.
 | ID | Frozen workflow | Frozen evidence | UI | API | Persistence | Offline | Automated tests | Overall and missing behavior |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | W01 | Home, hierarchical navigation, context and reload resumption | G1, G17 | **partial** — U1, U2 provide navigation and selectors but do not restore same-user view/scroll state | **partial** — A1 supplies lists/search; there is no resumption contract | **partial** — D1 stores records/sessions, not browser context | **partial** — O2 reloads the shell and cached GETs can reopen data | **partial** — T8 reloads selected pages; T12 covers only home/details responsively | **partial** — navigation works, but durable same-user context and viewport resumption are absent. |
-| W02 | Site create, read, update and search with role/conflict behavior | G2 | **partial** — U2/U3 create, list, search and open; no edit/conflict UI | **verified** — A1 provides list/create/update/search, write authorization and optimistic version checks | **verified** — D1 has canonical sites, unique codes and versions | **partial** — U3 queues creation only; update/conflict replay is absent | **partial** — T1/T4 cover APIs and roles; T8 covers create/reload; T13 is intentionally red for browser edit persistence, conflicts and viewer state | **partial** — complete API foundation, incomplete browser and offline workflow. |
+| W02 | Site create, read, update and search with role/conflict behavior | G2 | **verified** — U2/U3 create, list, search, open and edit sites; writers receive retained conflict resolution and viewers receive explicit read-only state | **verified** — A1 provides validated list/create/update/search, write authorization, optimistic versions, scoped server-version errors and exact idempotent retry | **verified** — D1 has canonical sites, unique codes and versions; successful writes and audits are transactional | **verified** — O1/U3 cache local site drafts, coalesce durable updates, serialize replay, guard completed operations and retain scoped conflicts for review/discard/reapply | **verified** — T1/T4 cover APIs, authorization and idempotent/divergent concurrency; T8 covers create/reload/search; T13 passes all five online/offline browser cases | **verified** — the zero-plugin site workflow is complete across browser, roles, persistence, conflicts, search and applicable offline recovery. |
 | W03 | Room-owned canonical racks, default height, suite-line confirmation, duplicates and edit | G3 | **partial** — U3 displays rooms/racks and front previews; it cannot add or edit them | **partial** — A1 creates/updates rooms/racks with room ownership and default `47U`; no delete, inference/confirmation, duplicate/merge workflow | **partial** — D1 stores rooms, suite line, height and layouts | **missing** — no room/rack browser mutation is queueable | **partial** — T1 verifies generic create/update/concurrency; T12 is visual-only | **partial** — the data/API skeleton is not a usable canonical-rack workflow. |
 | W04 | Front/rear rack elevation device add, move, resize and remove with stable identity | G3 | **missing** — U3 renders a read-only front preview and filters rear devices out | **partial** — A1 can create/update positioned devices but has no remove or layout interaction contract | **partial** — D1 stores side, U position, size and stable `device_key`; layout JSON is not exposed by the route | **missing** — no elevation operation is queued | **partial** — T1 seeds one device; T12 captures a static front elevation | **partial** — stable fields exist, but the elevation editor is missing. |
 | W05 | Rack and per-device photo upload, current/history view, replacement and deletion | G4 | **missing** — there is no photo UI | **partial** — A1 uploads/lists/reads rack/device photos with type/size bounds; no delete, replacement/current semantics or device-key lifecycle | **partial** — D1 stores generic photo bytes/metadata but not immutable current/history relationships | **missing** — uploads and deletes have no queue policy | **partial** — T3 exercises only package upload/list/content and an orphan rejection | **partial** — a generic photo service exists without the frozen lifecycle. |
@@ -187,9 +187,9 @@ layer evidence.
 
 ## Size and recovery order
 
-The 34 detailed workflows contain **6 missing**, **28 partial**, and **0
-verified** end-to-end outcomes. Verified lower layers are useful prerequisites,
-not parity claims.
+The 34 detailed workflows contain **6 missing**, **27 partial**, and **1
+verified** end-to-end outcome. Verified lower layers remain useful
+prerequisites, not parity claims for the other workflows.
 
 The evidence supports the existing recovery order:
 
