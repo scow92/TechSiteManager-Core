@@ -93,8 +93,8 @@ it cannot supply missing executable behavior.
 
 ## Current next action
 
-The next item is **INVENTORY-02**. Qualify existing completion claims against
-the evidence inventory before adding more import or presentation polish.
+The next item is **INVENTORY-03**. Add a failing fictional browser contract
+test for the first missing workflow slice before implementing that slice.
 
 ### Phase 1 — Establish the public-safe parity inventory
 
@@ -104,9 +104,14 @@ the evidence inventory before adding more import or presentation polish.
   Evidence: `e108e1c` adds `docs/CORE_PARITY_INVENTORY.md`, mapping 34 detailed
   workflows and all 14 acceptance flows to exact frozen and current files/tests;
   it records 6 missing, 28 partial and 0 verified end-to-end workflows.
-- [ ] **INVENTORY-02** Replace or qualify checked claims in
+- [x] **INVENTORY-02** Replace or qualify checked claims in
   `docs/IMPLEMENTATION_PLAN.md`, `docs/VISUAL_PARITY.md` and release-readiness
   documents when they cover only styling, schema or API presence.
+  Evidence: `ed1fdf6` distinguishes implemented technical foundations, partial
+  browser workflows, verified end-to-end parity, and formal approval/production
+  readiness across the plan, visual, release, deployment, publication,
+  allowlist, licensing, and top-level status documents; each product-status
+  claim points to `docs/CORE_PARITY_INVENTORY.md`.
 - [ ] **INVENTORY-03** Add failing fictional browser contract tests for the
   first missing workflow slice before implementing it.
 - [ ] **INVENTORY-04** Agree the implementation order and migration strategy
@@ -312,3 +317,4 @@ Next unchecked item:
 | --- | --- | --- | --- | --- |
 | 2026-08-31 | Recovery decision | `6de4834` | Frozen original fixed at PR 23 commit `4bc778e9`; incomplete core parity acknowledged | INVENTORY-01 |
 | 2026-08-31 | INVENTORY-01 | `e108e1c` | Public-safe 34-workflow UI/API/persistence/offline/test matrix plus all 14 acceptance-flow roll-ups in `docs/CORE_PARITY_INVENTORY.md` | INVENTORY-02 |
+| 2026-08-31 | INVENTORY-02 | `ed1fdf6` | Qualified plan, visual, release, deployment, publication, allowlist, licensing and top-level status claims against `docs/CORE_PARITY_INVENTORY.md`; 6 missing, 28 partial and 0 verified end-to-end workflows remain | INVENTORY-03 |

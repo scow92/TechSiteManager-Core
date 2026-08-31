@@ -3,6 +3,26 @@
 This document contains only public-safe gate status. Detailed review patterns
 and any organization-specific findings must remain outside this repository.
 
+## Current status
+
+- **Implemented technical foundations:** the historical and current automated
+  evidence supports generic schema/API, security boundaries, plugin/import
+  contracts, shell rendering, selected offline primitives, backup/restore, and
+  container-hardening claims at the layers identified in
+  [`CORE_PARITY_INVENTORY.md`](CORE_PARITY_INVENTORY.md).
+- **Partial browser workflows:** 28 workflows are partial and 6 are missing.
+  Passing lower-level and screenshot tests does not close those gaps.
+- **Verified end-to-end product parity:** none. All 14 critical `FLOW-*` items
+  remain unchecked in
+  [`CORE_PLUGIN_RECOVERY_GUIDE.md`](CORE_PLUGIN_RECOVERY_GUIDE.md).
+- **Formal approval and production readiness:** not established. Human
+  approvals, migration/provider evidence, complete workflow acceptance, and
+  operational gates remain outstanding.
+
+Accordingly, this repository is **not production-ready**. “Release candidate”
+is a version label, while the passed checks below are bounded technical or
+historical evidence; neither is a product-acceptance decision.
+
 ## Candidate identity
 
 - Public source repository: `scow92/TechSiteManager-Core`
@@ -22,7 +42,7 @@ and any organization-specific findings must remain outside this repository.
 - CycloneDX SBOM SHA-256:
   `49011a82d6d4eab74e155866935bd3fe9e3e6bf03daeaa22855e2375a9247217`
 
-The recorded evidence predates Plugin API V2. The V2 release candidate must be
+The recorded evidence predates Plugin API V2. The V2-labelled candidate must be
 revalidated and must receive the still-unrecorded approvals below before these
 historical results can be treated as evidence for that candidate.
 
@@ -31,14 +51,14 @@ made after the evidence-bearing source commit. Because a commit cannot contain
 its own hash, the final pull-request head is revalidated after this report is
 committed; that exact head and its CI result are recorded on the pull request.
 
-## Passed checks
+## Historical technical checks passed
 
 The 2026-08-29 release review passed:
 
 - lockfile-clean dependency installation with zero reported vulnerabilities;
 - ESLint and JavaScript syntax checks;
 - 58 unit and integration tests with no failures or skips;
-- zero-plugin and fictional-plugin Playwright browser flows;
+- bounded zero-plugin and fictional-plugin Playwright smoke flows;
 - zero-plugin behaviour, generic search, service-worker shell coverage,
   offline replay, authentication, authorization, optimistic concurrency,
   plugin loading and compatibility, strict YAML-profile security, import
@@ -47,7 +67,7 @@ The 2026-08-29 release review passed:
   `integrity_check` equal to `ok` and no foreign-key violations;
 - backup, restore, schema constraints, and throwaway down/up recovery tests;
 - a fresh private clone of the licensing commit, including lockfile install
-  and the complete repository release suite;
+  and the complete repository technical verification suite available then;
 - current-tree, complete candidate history, tracked/hidden file, commit
   message, unexpected-artifact, and repository-integrity scans;
 - one candidate root commit, no commit overlap with the original private
@@ -62,7 +82,13 @@ The 2026-08-29 release review passed:
   history, and all-layer review; and
 - three required CI jobs on the evidence-bearing commit.
 
-The root package contains 73 files and the fictional plugin contains seven.
+These checks validate the named technical boundaries at the historical
+evidence commit. They did not exercise the recovery guide's 14 critical
+workflows and do not establish frozen-product parity. Current workflow status
+and exact test coverage are recorded in `CORE_PARITY_INVENTORY.md`.
+
+At that historical baseline, the root package contained 73 files and the
+fictional plugin contained seven.
 Both archives contain the official licence and contain no binary or forbidden
 artifact. The final image is
 `sha256:c803fb2f94ee0a5a3f6328e656090053a7d5f5a96c4839c9f76f9c2d13dc3ecc`.
@@ -106,7 +132,7 @@ organization requires external execution.
 
 ## Failed checks
 
-No candidate check in the completed evidence run failed. Initial harness
+No technical check in the completed historical evidence run failed. Initial harness
 attempts that used read-only default tool caches stopped before evaluating the
 candidate and passed when temporary writable caches were configured.
 
@@ -119,6 +145,8 @@ candidate and passed when temporary writable caches were configured.
 
 ## Known limitations and manual review
 
+- The parity inventory records 6 missing and 28 partial workflows, with no
+  verified end-to-end product flow.
 - Plugins are trusted in-process code, not sandboxes.
 - The build-stage Node image is selected by a release tag; the successful
   build resolved that tag to an immutable digest recorded in the build log.

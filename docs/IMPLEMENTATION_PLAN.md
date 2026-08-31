@@ -4,18 +4,28 @@ This is the public-safe delivery checklist for the generic candidate. It
 contains no source-system mappings, legacy schema knowledge, operational data,
 or private repository details.
 
+Checked boxes in this document record implemented technical foundations or a
+specific historical verification activity. They do **not** assert a complete
+browser workflow, frozen-product parity, formal approval, or production
+readiness. The authoritative layer-by-layer status is
+[`CORE_PARITY_INVENTORY.md`](CORE_PARITY_INVENTORY.md): 6 workflows are
+missing, 28 are partial, and 0 are verified end to end. The recovery order and
+acceptance gates are tracked in
+[`CORE_PLUGIN_RECOVERY_GUIDE.md`](CORE_PLUGIN_RECOVERY_GUIDE.md).
+
 ## Repository construction and disclosure
 
 - [x] Start from a new root commit with no inherited Git ancestry.
 - [x] Keep the candidate and its remote private during the original
   implementation and evidence review.
 - [x] Define and enforce the candidate source allowlist.
-- [x] Use one generic fresh-install migration rather than historical
-  migrations.
-- [x] Complete tracked-file, package, secret, binary, dependency, licence, and
-  container-layer review.
-- [x] Verify the implementation branch from a fresh private clone; repeat on
-  the final documentation commit before handoff.
+- [x] Use purpose-built generic fresh-install migrations rather than copied
+  historical or deployment-specific bridge migrations.
+- [x] Record a candidate-baseline tracked-file, package, secret, binary,
+  dependency, licence, and container-layer review. Later candidate heads still
+  require revalidation.
+- [x] Verify the implementation baseline from a fresh private clone. This is
+  historical construction evidence, not current release approval.
 
 ## Generic core
 
@@ -30,8 +40,9 @@ or private repository details.
 - [x] Extend zero-plugin search across generic infrastructure and package child
   records.
 - [x] Add login throttling without account-existence disclosure.
-- [x] Complete browser navigation and remaining authorization regression
-  coverage.
+- [x] Add shell navigation and selected route-level authorization regression
+  coverage. Complete browser interactions and the product-wide role/state
+  matrix remain partial (`W01`, `W02`, `W23`, and `W31` in the inventory).
 
 ## Plugin and import contract
 
@@ -58,42 +69,56 @@ or private repository details.
 ## Offline and operations
 
 - [x] Keep API traffic out of the service-worker cache.
-- [x] Use IndexedDB for disposable caches, durable operations, dead letters,
-  dirty packages, and pending logout.
-- [x] Harden FIFO replay, response classification, queued dependencies, and
-  pending-logout recovery.
+- [x] Define IndexedDB stores for disposable caches, durable operations, dead
+  letters, dirty packages, ID remaps, and pending logout. The dirty-package
+  store and most mutation queues are not connected to browser workflows.
+- [x] Implement and unit-test generic FIFO replay, response classification,
+  queued dependencies, dead letters, ID remaps, and pending-logout recovery.
+  Product-wide offline durability remains partial (`W28`).
 - [x] Provide SQLite-safe online backup, verified restore, and integrity tests.
-- [x] Provide a zero-plugin, non-root, read-only-container deployment.
-- [x] Complete container smoke, layer, and filesystem inspection.
+- [x] Provide a checked-in zero-plugin, non-root, read-only-root-filesystem
+  container baseline. This is deployment plumbing, not production acceptance.
+- [x] Record container smoke, layer, and filesystem inspection for the
+  evidence baseline; current operational acceptance remains partial (`W33`).
 
-## Acceptance
+## Technical verification and approval status
 
-- [x] Baseline lint, syntax, unit/integration, browser, disclosure, dependency
-  audit, and zero-plugin/fictional-plugin paths pass.
-- [x] Add focused tests for every item completed above.
-- [x] Run the complete acceptance matrix and record passed, failed, and skipped
-  checks in `docs/RELEASE_READINESS.md`.
+- [x] The recorded baseline lint, syntax, unit/integration, bounded browser,
+  disclosure, dependency-audit, and zero-plugin/fictional-plugin checks pass.
+- [x] Add focused tests for the technical foundation claims above. These tests
+  do not cover every browser workflow or acceptance state.
+- [x] Run the repository technical verification matrix and record passed,
+  failed, and skipped checks in `docs/RELEASE_READINESS.md`. This was not the
+  14-flow product acceptance matrix in the recovery guide.
 - [x] Push reviewable checkpoints to the candidate branch while it was
   private.
 - [x] Record the owner-selected `Apache-2.0` outbound licence.
 - [x] Record that the source repository became public at commit
   `5d98b43f349c8329df71b0c1a603782b0c4ff368` on 2026-08-29 at 08:40:53 UTC.
+- [ ] Verify every critical browser workflow end to end. All `FLOW-*` items in
+  the recovery guide remain unchecked.
+- [ ] Complete candidate-data migration, private-provider differential, and
+  operational recovery acceptance where applicable.
 - [ ] Record formal technical, security, disclosure, organizational, and
   publication approvals if they are later completed; public visibility alone
   does not establish them.
 
-## Generic visual parity
+## Generic visual foundation and regression coverage
 
 - [x] Restore the project-owned visual tokens and shared responsive shell in
   the native-module browser architecture.
-- [x] Apply generic layouts to work packages, sites, infrastructure records,
-  imports, settings, loading, empty, error, and synchronization states.
+- [x] Apply generic layouts to available work-package, site, infrastructure,
+  import, settings, loading, empty, error, and synchronization states. Layout
+  coverage does not establish interaction completeness.
 - [x] Preserve generic terminology and descriptor-driven zero-plugin/plugin
   behavior without plugin browser code.
-- [x] Add fictional Playwright visual-state coverage for desktop, tablet,
-  mobile, dark/light, offline, and reconciliation preview.
-- [x] Restore original-style Home search hierarchy, contextual site/work-package
-  navigation, sectioned package views, rack elevations, and explicit import
-  result actions while retaining generic terminology and server-only providers.
-- [x] Enforce deterministic visual drift thresholds across phone portrait and
-  landscape, tablet portrait and landscape, and desktop captures in both themes.
+- [x] Add fictional Playwright screenshot-regression coverage for selected
+  desktop, tablet, mobile, dark/light, offline, and reconciliation states.
+- [x] Implement project-style Home hierarchy, contextual navigation, sectioned
+  package layouts, read-only rack previews, and import result actions while
+  retaining generic terminology and server-only providers. These are visual
+  foundations; the related product workflows remain partial or missing.
+- [x] Enforce deterministic perceptual-drift thresholds for Home and package
+  details across phone portrait/landscape, tablet portrait/landscape, and
+  desktop in both themes, plus selected desktop-only route captures. This is
+  screenshot regression, not end-to-end visual or behavioral parity (`W34`).

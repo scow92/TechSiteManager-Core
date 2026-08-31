@@ -6,9 +6,12 @@ points, devices, work packages, work items, circuits, physical segments,
 distances, consumables, photos, assignments, audit history, and import
 provenance.
 
-The application is useful with no plugins. Search, editing, generic JSON/CSV
-export, authentication, optimistic concurrency, offline shell support, and
-backup/restore are core capabilities.
+The application is useful with no plugins. Core implements technical
+foundations for generic search and editing, JSON/CSV export, authentication,
+optimistic concurrency, offline shell/queue behavior, and backup/restore.
+Those foundations do not yet form complete browser workflows for the frozen
+product reference; see the
+[core parity inventory](docs/CORE_PARITY_INVENTORY.md).
 
 The browser provides a compact responsive planning shell with dark and light
 themes, desktop and mobile navigation, consistent record cards and forms, and
@@ -21,6 +24,24 @@ terminology and interpretation remain plugin-owned.
 This source repository is public. Version `1.1.0-rc.1` is a release candidate.
 Plugin API V2 adds validated data-only presentation profiles and plugin-scoped
 typed extension values while retaining compatible Plugin API V1 packages.
+The version label identifies the candidate; it is not a production-readiness
+or product-parity claim.
+
+- **Implemented technical foundations:** generic persistence and APIs,
+  authentication/authorization, import and plugin contracts, the responsive
+  shell, selected offline primitives, and SQLite-safe backup/restore.
+- **Partial browser workflows:** the inventory records 28 partial workflows;
+  many APIs and screens are not connected into complete interactions.
+- **Verified end-to-end product parity:** none. Six workflows are missing, no
+  critical `FLOW-*` acceptance item is checked, and screenshot regression is
+  not interaction parity.
+- **Formal approval and production readiness:** not established. Required
+  human approvals, migration evidence, full workflow acceptance, and
+  operational gates remain incomplete.
+
+The authoritative status sources are
+[CORE_PARITY_INVENTORY.md](docs/CORE_PARITY_INVENTORY.md) and
+[CORE_PLUGIN_RECOVERY_GUIDE.md](docs/CORE_PLUGIN_RECOVERY_GUIDE.md).
 
 GitHub recorded public visibility on 2026-08-29 at 08:40:53 UTC, while `main`
 pointed at commit `5d98b43f349c8329df71b0c1a603782b0c4ff368`. Making the
@@ -72,10 +93,12 @@ curl --fail http://127.0.0.1:3000/api/health
 
 The browser is plain JavaScript using native ES modules without a framework,
 bundler, transpiler, or build step. A service-worker shell and IndexedDB
-queues provide offline support. Offline mutations replay in FIFO order; transient and unclassified
-failures remain queued, while permanent rejections are visible and explicitly
-retryable. The server is CommonJS on Express, Knex, and SQLite. One
-intentionally designed migration creates the generic fresh-install schema.
+stores provide offline foundations. The generic queue engine replays FIFO,
+retains transient and unclassified failures, and exposes permanent rejections,
+but only selected browser mutations currently enqueue; package and most
+infrastructure workflows remain incomplete. The server is CommonJS on
+Express, Knex, and SQLite. Purpose-built generic migrations create the
+fresh-install schema; no candidate/legacy database bridge exists yet.
 
 Plugin API V2 is a narrow trusted in-process boundary for import providers,
 source connectors, named transformations, validated YAML import and

@@ -26,9 +26,13 @@ binary review.
 - newly written public documentation: Markdown below `docs/`;
 - generic deployment: `Dockerfile` and `docker-compose.yml`.
 
-The only allowed database migration is
-`server/db/migrations/0001_generic_baseline.js`. It defines a fresh generic
-installation and contains no conversion path from another schema.
+The allowed database migrations are
+`server/db/migrations/0001_generic_baseline.js` and
+`server/db/migrations/0002_plugin_api_v2_extensions.js`. They define the
+generic fresh-install schema and Plugin API V2 extension storage. Neither is a
+conversion path from a candidate, legacy, or deployment-specific schema; that
+bridge remains unimplemented (`W32` in
+[`CORE_PARITY_INVENTORY.md`](CORE_PARITY_INVENTORY.md)).
 
 ## Always excluded
 
