@@ -6,6 +6,11 @@ The authoritative dependency versions and package provenance are recorded in
 `package-lock.json`; the generated CycloneDX SBOM supplies the complete
 machine-readable inventory for each reviewed candidate commit.
 
+This is technical supply-chain evidence only. It does not establish formal
+human licensing approval, product parity, or production readiness; see
+[`RELEASE_READINESS.md`](RELEASE_READINESS.md) and
+[`CORE_PARITY_INVENTORY.md`](CORE_PARITY_INVENTORY.md).
+
 ## Dependency review
 
 The release-candidate dependency review covers runtime, development, and
