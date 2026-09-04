@@ -1,7 +1,7 @@
 # Core parity inventory
 
 This inventory is the evidence record for `INVENTORY-01`. It compares the
-public core through `f65947c` with the frozen product workflow at
+public core through `e7a9609` with the frozen product workflow at
 `4bc778e9e948bde4389c73b7b47553ea66146227`. The frozen repository was inspected
 with read-only Git commands. No source data, source-derived mappings,
 operational values, private paths, or deployment topology are reproduced here.

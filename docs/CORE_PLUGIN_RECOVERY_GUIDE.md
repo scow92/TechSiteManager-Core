@@ -95,9 +95,9 @@ it cannot supply missing executable behavior.
 
 ## Current next action
 
-Phases 1 through 4 are complete. The next item is **CORE-CONS-01**. Implement
-shared consumables catalogue administration and keep catalogue definitions
-separate from per-package required quantities.
+Phases 1 through 5 are complete. The next item is **PLUGIN-01**. Pin an exact
+private plugin package version and supported core range, then verify zero-plugin
+and required-plugin startup independently without changing core behavior.
 
 ### Phase 1 — Establish the public-safe parity inventory
 
@@ -253,20 +253,39 @@ separate from per-package required quantities.
 
 ### Phase 5 — Restore materials, catalogue and operational workflows
 
-- [ ] **CORE-CONS-01** Implement shared consumables catalogue administration
+- [x] **CORE-CONS-01** Implement shared consumables catalogue administration
   and per-package required quantities without conflating them.
-- [ ] **CORE-BOM-01** Implement fibre SKU catalogue administration, exact
+  Evidence: `e7a9609` adds concurrent admin catalogue CRUD, package selectors,
+  independent quantity clearing, in-use delete protection and dependent
+  temporary-ID replay, covered by T2/T6/T16/T17.
+- [x] **CORE-BOM-01** Implement fibre SKU catalogue administration, exact
   matching, next-up lengths, simplex counts, totals, unmatched reasons and
   spreadsheet export.
-- [ ] **CORE-USERS-01** Restore account request, approval, roles, engineer
+  Evidence: `e7a9609` adds the constrained SKU catalogue and deterministic
+  exact/shortest-next matcher with simplex quantities, grouped totals, explicit
+  failure reasons and formula-safe CSV, covered by T16/T17 and recovery.
+- [x] **CORE-USERS-01** Restore account request, approval, roles, engineer
   profiles, exact assignment matching and workload views.
-- [ ] **CORE-PWA-01** Restore same-user navigation/viewport resumption, shell
+  Evidence: `e7a9609` adds request/approval lifecycle, profile concurrency,
+  exact whole-value assignment matching and team/self workload views while
+  preserving four-role authorization, session revocation and audit in T16/T17.
+- [x] **CORE-PWA-01** Restore same-user navigation/viewport resumption, shell
   caching, notification setup and sign-out subscription behavior.
-- [ ] **CORE-OFFLINE-01** Complete durable dirty-pack and infrastructure
+  Evidence: `e7a9609` adds user-scoped IndexedDB route/scroll state, exact shell
+  cache v15, bounded push handling and user-owned subscription deletion on
+  disable/logout; T7/T16/T17 cover same/cross-user restore and lifecycle rules.
+- [x] **CORE-OFFLINE-01** Complete durable dirty-pack and infrastructure
   operation queues, FIFO replay, temporary-ID remapping, scoped conflicts,
   dead letters, pending logout and no-silent-loss testing.
-- [ ] **CORE-OPS-01** Verify non-root/read-only containers, graceful shutdown,
+  Evidence: `e7a9609` connects termination positions and material/profile
+  mutations to the durable queue, remaps raw and URL-encoded IDs inside dirty
+  package snapshots, and passes T6/T7/T13–T17 no-loss/conflict/dead-letter cases.
+- [x] **CORE-OPS-01** Verify non-root/read-only containers, graceful shutdown,
   health checks, encrypted backups, isolated restore and backup-age monitoring.
+  Evidence: `e7a9609` adds database/backup-age health, bounded connection
+  draining, AES-256-GCM SQLite-safe backups, protected-key enforcement and
+  isolated authenticated restore; T11/T16 and a real non-root, read-only,
+  capability-free zero-plugin container smoke pass.
 
 ### Phase 6 — Accept private providers without changing the product
 
@@ -401,3 +420,4 @@ Next unchecked item:
 | 2026-08-31 | Phase 2 (`CORE-RACK-01`–`CORE-DIST-01`) | `d590638`, `3cb4162` | 72 unit/route/recovery tests and all 7 site browser contracts pass; zero-plugin/plugin e2e and refreshed visual comparisons pass; disclosure/history, licence and package reviews pass; migration `0003` preserves constraints and survives down/up, backup/restore, non-root read-only image smoke and restored-database startup | CORE-PACK-01 |
 | 2026-08-31 | Phase 3 (`CORE-PACK-01`–`CORE-EXPORT-01`) | `e96ce08` | 76 unit/route/recovery tests, all 4 package and 7 site browser contracts, zero-plugin/plugin e2e, and the expanded handover/completed/print visual matrix pass; disclosure/history, licence and 127-file package reviews pass; migration `0004` preserves pre-Phase-3 package/child rows and completion state through upgrade/down/up and backup/restore; the restored database starts under the non-root read-only/no-capability container | CORE-CABLE-01 |
 | 2026-09-04 | Phase 4 (`CORE-CABLE-01`–`CORE-CABLE-05`) | `f65947c` | 78 unit/route/recovery tests, all 3 cable, 4 package and 7 site browser contracts, zero-plugin/plugin e2e, and the 61-capture visual matrix pass; disclosure/history, licence and 131-file package reviews pass; migration `0005` preserves legacy and typed schedule rows through upgrade/down/up and backup/restore; the restored database starts under the non-root read-only/no-capability container | CORE-CONS-01 |
+| 2026-09-04 | Phase 5 (`CORE-CONS-01`–`CORE-OPS-01`) | `e7a9609` | 89 unit/route/recovery tests, the Phase 5 browser journey plus all 3 cable, 4 package and 7 site browser contracts, zero-plugin/plugin e2e, and the 65-capture visual matrix pass; disclosure/history, licence and 138-file package reviews pass; migration `0006` preserves earlier users and Phase 5 rows through upgrade/down/up and encrypted backup/restore; a real zero-plugin image passes non-root, read-only, no-capability health/startup | PLUGIN-01 |
