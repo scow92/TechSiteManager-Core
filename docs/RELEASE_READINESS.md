@@ -10,7 +10,7 @@ and any organization-specific findings must remain outside this repository.
   contracts, shell rendering, selected offline primitives, backup/restore, and
   container-hardening claims at the layers identified in
   [`CORE_PARITY_INVENTORY.md`](CORE_PARITY_INVENTORY.md).
-- **Partial browser workflows:** 28 workflows are partial and 6 are missing.
+- **Partial browser workflows:** 12 workflows are partial and 1 is missing.
   Passing lower-level and screenshot tests does not close those gaps.
 - **Verified end-to-end product parity:** none. All 14 critical `FLOW-*` items
   remain unchecked in
@@ -145,8 +145,8 @@ candidate and passed when temporary writable caches were configured.
 
 ## Known limitations and manual review
 
-- The parity inventory records 6 missing, 16 partial, and 12 verified detailed
-  workflow. No critical `FLOW-*` acceptance item is verified end to end.
+- The parity inventory records 1 missing, 12 partial, and 21 verified detailed
+  workflows. No critical `FLOW-*` acceptance item is verified end to end.
 - Plugins are trusted in-process code, not sandboxes.
 - The build-stage Node image is selected by a release tag; the successful
   build resolved that tag to an immutable digest recorded in the build log.

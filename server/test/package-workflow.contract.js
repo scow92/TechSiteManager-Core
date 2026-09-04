@@ -35,6 +35,10 @@ test.before(async () => {
   packagePublicId = await page.evaluate(async () => {
     const headers = { 'Content-Type': 'application/json' };
     const site = await (await fetch('/api/sites', { method: 'POST', headers, body: JSON.stringify({ code: 'PACK-DEMO-01', name: 'Fictional Package Lab' }) })).json();
+    const room = await (await fetch(`/api/sites/${site.publicId}/rooms`, { method: 'POST', headers, body: JSON.stringify({ name: 'Fictional Package Suite' }) })).json();
+    const rack = await (await fetch(`/api/sites/${site.publicId}/racks`, { method: 'POST', headers, body: JSON.stringify({ label: 'PACK-RACK-01', roomPublicId: room.publicId }) })).json();
+    await fetch(`/api/sites/${site.publicId}/devices`, { method: 'POST', headers, body: JSON.stringify({ hostname: 'package-device-a', rackPublicId: rack.publicId, rackUnit: 10, sizeUnits: 1, side: 'front' }) });
+    await fetch(`/api/sites/${site.publicId}/devices`, { method: 'POST', headers, body: JSON.stringify({ hostname: 'package-device-b', rackPublicId: rack.publicId, rackUnit: 20, sizeUnits: 1, side: 'front' }) });
     return (await (await fetch('/api/work-packages', { method: 'POST', headers, body: JSON.stringify({ sitePublicId: site.publicId, packageReference: 'PKG-PHASE-03', projectReference: 'PROJECT-AURORA', title: 'Fictional package contract', description: '', status: 'active', leadAssignee: 'engineer', assignees: ['engineer'], workItems: [], circuits: [], consumableRequirements: [] }) })).json()).publicId;
   });
   administrator = { context, page }; engineer = await login('engineer'); viewer = await login('viewer');
@@ -47,9 +51,8 @@ test('transactional browser editor debounces nested changes, preserves reference
   await page.getByLabel('Title').fill('Fictional transactional package'); await page.getByLabel('Assignees (comma separated)').fill('engineer, administrator');
   await page.locator('[data-package-view="work-items"]').click(); await page.getByRole('button', { name: 'Add work item' }).click();
   const itemForm = page.locator('form.child-editor'); await itemForm.getByLabel('Item reference').fill('ITEM-PHASE-03'); await itemForm.getByLabel('Title').fill('Install fictional containment'); await itemForm.getByLabel('Lead assignee').fill('engineer'); await itemForm.getByLabel('Assignees (comma separated)').fill('engineer');
-  await page.locator('[data-package-view="connections"]').click(); await page.getByRole('button', { name: 'Add circuit' }).click();
-  const circuit = page.locator('form.child-editor'); await circuit.getByLabel('Circuit reference').fill('CIRCUIT-PHASE-03'); await circuit.getByLabel('Description').fill('Fictional fibre path'); await page.getByRole('button', { name: 'Add segment' }).click();
-  await page.getByLabel('segmentReference').fill('SEGMENT-PHASE-03'); await page.getByLabel('fromEndpoint').fill('fictional-a:1'); await page.getByLabel('toEndpoint').fill('fictional-b:1'); await page.getByLabel('lengthMetres').fill('18.5');
+  await page.locator('[data-package-view="connections"]').click(); await page.getByRole('button', { name: 'Add Fibre row' }).click();
+  const cableRow = page.locator('.cable-grid tbody tr').first(); await cableRow.getByLabel('Circuit reference').fill('CIRCUIT-PHASE-03'); await cableRow.getByLabel('Segment reference').fill('SEGMENT-PHASE-03'); await cableRow.getByLabel('from port').fill('xe-0/0/1'); await cableRow.getByLabel('to port').fill('xe-0/0/2'); await cableRow.getByLabel('Length metres').fill('18.5');
   await page.locator('[data-package-view="consumables"]').click(); await page.getByRole('button', { name: 'Add consumable requirement' }).click(); await page.getByLabel('description').fill('Fictional labels'); await page.getByLabel('quantityRequired').fill('6');
   await page.evaluate(async () => { const store = await import('/js/work-package-store.js'); const state = store.packageSaveState(); globalThis.__phase3Refs = { pack: state.pack, item: state.pack.workItems[0], circuit: state.pack.circuits[0], segment: state.pack.circuits[0].segments[0], requirement: state.pack.consumableRequirements[0] }; });
   await page.locator('[data-package-view="details"]').click(); await page.getByLabel('Package reference').waitFor();

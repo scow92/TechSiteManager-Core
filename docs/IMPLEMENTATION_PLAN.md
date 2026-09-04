@@ -8,8 +8,8 @@ Checked boxes in this document record implemented technical foundations or a
 specific historical verification activity. They do **not** assert a complete
 browser workflow, frozen-product parity, formal approval, or production
 readiness. The authoritative layer-by-layer status is
-[`CORE_PARITY_INVENTORY.md`](CORE_PARITY_INVENTORY.md): 6 workflows are
-missing, 16 are partial, and 12 are verified end to end. The recovery order and
+[`CORE_PARITY_INVENTORY.md`](CORE_PARITY_INVENTORY.md): 1 workflow is
+missing, 12 are partial, and 21 are verified end to end. The recovery order and
 acceptance gates are tracked in
 [`CORE_PLUGIN_RECOVERY_GUIDE.md`](CORE_PLUGIN_RECOVERY_GUIDE.md).
 
@@ -43,10 +43,13 @@ acceptance gates are tracked in
   work-item and administrator completion, handover galleries, ranked search,
   complete generic/print exports, optimistic conflict recovery and durable
   package replay (`W09`–`W15`).
+- [x] Restore the shared fibre, copper and DAC schedule grid, typed device/ODF
+  endpoints, transactional rack correction, media-specific validation and
+  durable conflict-aware replay (`W16`–`W23`).
 - [x] Add login throttling without account-existence disclosure.
 - [x] Add shell navigation and selected route-level authorization regression
   coverage. Complete browser interactions and the product-wide role/state
-  matrix remain partial (`W01`, `W23`, and `W31` in the inventory); the isolated
+  matrix remain partial (`W01` and `W31` in the inventory); the isolated
   site workflow in `W02` is verified.
 
 ## Plugin and import contract
@@ -123,9 +126,10 @@ acceptance gates are tracked in
 - [x] Implement project-style Home hierarchy, contextual navigation, sectioned
   package layouts, read-only rack previews, and import result actions while
   retaining generic terminology and server-only providers. Package interactions
-  are now verified separately; the remaining pages are still governed by the
-  inventory rather than screenshot presence.
+  and cable interactions are now verified separately; the remaining pages are
+  still governed by the inventory rather than screenshot presence.
 - [x] Enforce deterministic perceptual-drift thresholds for Home and package
   details across phone portrait/landscape, tablet portrait/landscape, and
-  desktop in both themes, plus selected desktop-only route captures. This is
-  screenshot regression, not end-to-end visual or behavioral parity (`W34`).
+  desktop in both themes, plus the complete cable media/state matrix and
+  selected desktop-only route captures. This remains bounded workflow evidence,
+  not product-wide visual or behavioral parity (`W34`).

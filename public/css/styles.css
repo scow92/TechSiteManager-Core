@@ -287,6 +287,32 @@ pre { max-width: 100%; overflow: auto; padding: 14px; border: 1px solid var(--bo
 .photo-card .form-actions { padding: 0 10px 10px; }
 .handover-upload { margin-bottom: 14px; }
 .search-group-heading { margin: 16px 0 6px; color: var(--text-dim); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.cable-schedule { max-width: 100%; }
+.cable-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 9px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2); }
+.cable-toolbar .cable-field { min-width: 180px; }
+.cable-help { margin: -7px 0 0; font-size: 12px; }
+.cable-grid-wrap { overflow: auto; overscroll-behavior-inline: contain; }
+.cable-grid { min-width: 1420px; table-layout: fixed; }
+.cable-grid th:nth-child(1) { width: 170px; }
+.cable-grid th:nth-child(2), .cable-grid th:nth-child(3) { width: 245px; }
+.cable-grid th:nth-child(4) { width: 260px; }
+.cable-grid th:nth-child(5) { width: 210px; }
+.cable-grid th:nth-child(6) { width: 150px; }
+.cable-grid tr:focus-within td { background: var(--accent-soft); }
+.cable-grid td { background: var(--bg-2); }
+.cable-grid input, .cable-grid select { min-height: 34px; padding: 6px 8px; font-size: 12px; }
+.cable-field { display: grid; gap: 3px; margin-bottom: 7px; }
+.cable-field > span { color: var(--text-faint); font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.cable-location { display: block; min-height: 18px; margin: 5px 1px; color: var(--text-dim); font-size: 10.5px; }
+.cable-location-note { margin: 7px 0 0; color: var(--text-dim); font-size: 10.5px; }
+.cable-row-error { min-height: 15px; margin: 4px 0 0; color: var(--danger); font-size: 10.5px; }
+.cable-row-actions { display: flex; flex-direction: column; gap: 6px; }
+.cable-row-actions button { width: 100%; }
+.rack-correction { margin-top: 6px; padding-top: 4px; border-top: 1px solid var(--border); }
+.rack-correction summary { color: var(--accent); font-size: 10.5px; cursor: pointer; }
+.rack-correction-grid { display: grid; gap: 5px; padding-top: 7px; }
+.rack-correction-grid .cable-field { margin: 0; }
+.cable-helper { width: 100%; }
 .print-pack { width: min(1100px, calc(100% - 40px)); margin: 24px auto; }
 .print-pack dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; }
 .print-pack dt { color: var(--text-dim); font-weight: 650; }
@@ -334,6 +360,16 @@ pre { max-width: 100%; overflow: auto; padding: 14px; border: 1px solid var(--bo
   .actions .button, .actions button { flex: 1 1 auto; }
   .auth-overlay { padding: 16px; }
   .auth-card { padding: 24px 20px; }
+  .cable-toolbar { align-items: stretch; flex-direction: column; }
+  .cable-toolbar > * { width: 100%; }
+  .cable-grid-wrap { overflow: visible; border: 0; }
+  .cable-grid { display: block; min-width: 0; background: transparent; }
+  .cable-grid thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .cable-grid tbody { display: grid; gap: 14px; }
+  .cable-grid tr { display: grid; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2); box-shadow: var(--shadow-sm); }
+  .cable-grid td { display: block; padding: 12px; border-top: 1px solid var(--border); }
+  .cable-grid td:first-child { border-top: 0; }
+  .cable-row-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -352,4 +388,10 @@ pre { max-width: 100%; overflow: auto; padding: 14px; border: 1px solid var(--bo
   th { background: #eee !important; color: #000; }
   .print-pack { width: 100%; margin: 0; }
   .print-photos { grid-template-columns: repeat(2, 1fr); }
+  .cable-toolbar, .cable-help, .rack-correction, .cable-row-actions { display: none !important; }
+  .cable-grid-wrap { overflow: visible; border: 0; }
+  .cable-grid { min-width: 100%; table-layout: auto; font-size: 8px; }
+  .cable-grid input, .cable-grid select { min-height: 0; padding: 1px; border: 0; background: transparent; color: #000; font-size: 8px; appearance: none; }
+  .cable-field { margin-bottom: 2px; }
+  .cable-field > span, .cable-location { color: #444; font-size: 7px; }
 }

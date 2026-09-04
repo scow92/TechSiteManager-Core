@@ -7,12 +7,14 @@ const auth = require('../lib/auth');
 const audit = require('../lib/audit');
 const { packageDetail } = require('../lib/work-packages');
 const { saveSnapshot, OPEN_STATUSES } = require('../lib/work-package-editor');
+const { MEDIA, segmentValues: cableSegmentValues, validateChain } = require('../lib/cable-schedules');
 const { assertMutable, assertEntityMutable } = require('../lib/work-package-locks');
 const { knownKeys, string, integer, number, array, enumeration, uuid } = require('../lib/validation');
 const { httpError } = require('../lib/errors');
 
 const router = express.Router();
 const PACKAGE_STATUSES = ['planned', 'active', 'blocked', 'complete', 'cancelled'];
+const SEGMENT_KEYS = ['segmentReference', 'sequence', 'fromEndpoint', 'toEndpoint', 'fromEndpointMode', 'fromDevicePublicId', 'fromTerminationPositionPublicId', 'fromPort', 'toEndpointMode', 'toDevicePublicId', 'toTerminationPositionPublicId', 'toPort', 'fromConnector', 'toConnector', 'lengthMetres', 'notes', 'fibreType', 'fibreMode', 'fibreSimplex', 'stockLengthMetres', 'itemType', 'copperCategory', 'copperShielding', 'copperPinout', 'dacConnector', 'dacMedia', 'dacDirection'];
 
 function id() { return crypto.randomUUID(); }
 
@@ -202,6 +204,27 @@ async function infrastructureValues(kind, body, site, trx, existing = null) {
   };
 }
 
+router.get('/sites/:sitePublicId/cable-reference-data', async (req, res, next) => {
+  try {
+    const site = await siteByPublicId(req.params.sitePublicId);
+    const [rooms, racks, devices, points] = await Promise.all([
+      db('rooms').where({ site_id: site.id }).select('id', 'public_id', 'name', 'version').orderBy('name'),
+      db('racks').where({ site_id: site.id }).select('id', 'public_id', 'room_id', 'label', 'suite_line', 'suite_line_confirmed', 'size_units', 'version').orderBy('label'),
+      db('devices').where({ site_id: site.id }).select('public_id', 'room_id', 'rack_id', 'hostname', 'label', 'device_key', 'version').orderBy('hostname'),
+      db('termination_points').where({ site_id: site.id }).select('id', 'public_id', 'room_id', 'label', 'kind', 'version').orderBy('label')
+    ]);
+    const roomIds = new Map(rooms.map((row) => [row.id, row.public_id]));
+    const rackIds = new Map(racks.map((row) => [row.id, row.public_id]));
+    const positions = points.length ? await db('termination_positions').whereIn('termination_point_id', points.map((point) => point.id)).orderBy(['termination_point_id', 'tray', 'position']) : [];
+    res.json({
+      rooms: rooms.map((row) => ({ publicId: row.public_id, name: row.name, version: row.version })),
+      racks: racks.map((row) => ({ publicId: row.public_id, roomPublicId: roomIds.get(row.room_id) || null, label: row.label, suiteLine: row.suite_line, suiteLineConfirmed: Boolean(row.suite_line_confirmed), sizeUnits: row.size_units, version: row.version })),
+      devices: devices.map((row) => ({ publicId: row.public_id, roomPublicId: roomIds.get(row.room_id) || null, rackPublicId: rackIds.get(row.rack_id) || null, hostname: row.hostname, label: row.label, deviceKey: row.device_key, version: row.version })),
+      terminationPoints: points.map((point) => ({ publicId: point.public_id, roomPublicId: roomIds.get(point.room_id) || null, label: point.label, kind: point.kind, version: point.version, positions: positions.filter((position) => position.termination_point_id === point.id).map((position) => ({ publicId: position.public_id, tray: position.tray, position: position.position, label: position.label, version: position.version })) }))
+    });
+  } catch (error) { next(error); }
+});
+
 router.get('/sites/:sitePublicId/:kind', async (req, res, next) => {
   try {
     const spec = infrastructureSpec(req.params.kind);
@@ -285,6 +308,7 @@ router.delete('/sites/:sitePublicId/:kind/:publicId', auth.requireWrite, async (
         if (owned) throw httpError(409, 'room_not_empty', 'Move or remove the room infrastructure before deleting the room');
       }
       if (req.params.kind === 'racks' && await trx('devices').where({ rack_id: current.id }).first()) throw httpError(409, 'rack_not_empty', 'Remove or move rack devices before deleting the rack');
+      if (req.params.kind === 'devices' && await trx('segments').where((builder) => builder.where({ from_device_id: current.id }).orWhere({ to_device_id: current.id })).first()) throw httpError(409, 'device_in_cable_schedule', 'Remove or replace cable schedule endpoints before deleting the device');
       await trx('photos').where({ entity_type: req.params.kind === 'racks' ? 'rack' : req.params.kind === 'devices' ? 'device' : '', entity_public_id: req.params.publicId }).delete();
       await trx(spec.table).where({ id: current.id }).delete();
       await audit.record(trx, req.user.id, `${req.params.kind}.delete`, req.params.kind, req.params.publicId);
@@ -358,6 +382,9 @@ router.delete('/sites/:sitePublicId/termination-points/:pointPublicId/positions/
       const site = await siteByPublicId(req.params.sitePublicId, trx);
       const point = await trx('termination_points').where({ public_id: req.params.pointPublicId, site_id: site.id }).first();
       if (!point) throw httpError(404, 'termination_point_not_found', 'Termination point not found');
+      const current = await trx('termination_positions').where({ public_id: req.params.publicId, termination_point_id: point.id }).first();
+      if (!current) throw httpError(404, 'termination_position_not_found', 'Termination position not found');
+      if (await trx('segments').where((builder) => builder.where({ from_termination_position_id: current.id }).orWhere({ to_termination_position_id: current.id })).first()) throw httpError(409, 'termination_position_in_cable_schedule', 'Remove or replace cable schedule endpoints before deleting the termination position');
       const count = await trx('termination_positions').where({ public_id: req.params.publicId, termination_point_id: point.id, version: requestedVersion }).delete();
       if (!count) throw httpError(409, 'version_conflict', 'The termination position changed since it was loaded');
       await audit.record(trx, req.user.id, 'termination_position.delete', 'termination_point', req.params.pointPublicId, { positionId: req.params.publicId });
@@ -414,11 +441,16 @@ router.post('/work-packages', auth.requireWrite, async (req, res, next) => {
       for (const [circuitIndex, circuit] of circuits.entries()) {
         knownKeys(circuit, ['circuitReference', 'description', 'media', 'status', 'segments'], `circuits[${circuitIndex}]`);
         const segments = array(circuit.segments, `circuits[${circuitIndex}].segments`, { max: 100 });
-        const [circuitId] = await trx('circuits').insert({ public_id: id(), work_package_id: packageId, circuit_reference: string(circuit.circuitReference, `circuits[${circuitIndex}].circuitReference`, { required: true, max: 255 }), description: string(circuit.description, `circuits[${circuitIndex}].description`, { max: 20_000 }) || '', media: string(circuit.media, `circuits[${circuitIndex}].media`, { required: true, max: 64 }), status: enumeration(circuit.status || 'planned', `circuits[${circuitIndex}].status`, PACKAGE_STATUSES, true) });
+        const media = string(circuit.media, `circuits[${circuitIndex}].media`, { required: true, max: 64 });
+        const normalizedSegments = [];
         for (const [sequence, segment] of segments.entries()) {
-          knownKeys(segment, ['segmentReference', 'fromEndpoint', 'toEndpoint', 'lengthMetres', 'notes'], `circuits[${circuitIndex}].segments[${sequence}]`);
-          await trx('segments').insert({ public_id: id(), circuit_id: circuitId, segment_reference: string(segment.segmentReference, `circuits[${circuitIndex}].segments[${sequence}].segmentReference`, { required: true, max: 255 }), sequence, from_endpoint: string(segment.fromEndpoint, `circuits[${circuitIndex}].segments[${sequence}].fromEndpoint`, { required: true, max: 255 }), to_endpoint: string(segment.toEndpoint, `circuits[${circuitIndex}].segments[${sequence}].toEndpoint`, { required: true, max: 255 }), length_metres: number(segment.lengthMetres, `circuits[${circuitIndex}].segments[${sequence}].lengthMetres`, { min: 0, max: 1_000_000 }), notes: string(segment.notes, `circuits[${circuitIndex}].segments[${sequence}].notes`, { max: 20_000 }) || '' });
+          const path = `circuits[${circuitIndex}].segments[${sequence}]`;
+          knownKeys(segment, SEGMENT_KEYS, path);
+          normalizedSegments.push({ values: MEDIA.includes(media) ? await cableSegmentValues(trx, { ...segment, sequence: segment.sequence === undefined ? sequence : segment.sequence }, path, site.id, media) : legacySegmentValues({ ...segment, sequence }, path) });
         }
+        if (MEDIA.includes(media)) validateChain(normalizedSegments, `circuits[${circuitIndex}]`);
+        const [circuitId] = await trx('circuits').insert({ public_id: id(), work_package_id: packageId, circuit_reference: string(circuit.circuitReference, `circuits[${circuitIndex}].circuitReference`, { required: true, max: 255 }), description: string(circuit.description, `circuits[${circuitIndex}].description`, { max: 20_000 }) || '', media, status: enumeration(circuit.status || 'planned', `circuits[${circuitIndex}].status`, PACKAGE_STATUSES, true) });
+        for (const segment of normalizedSegments) await trx('segments').insert({ public_id: id(), circuit_id: circuitId, ...segment.values });
       }
       for (const [index, requirement] of requirements.entries()) {
         knownKeys(requirement, ['cataloguePublicId', 'description', 'quantityRequired', 'unit'], `consumableRequirements[${index}]`);
@@ -526,15 +558,29 @@ function circuitValues(body) {
   };
 }
 
-function segmentValues(body) {
+function legacySegmentValues(body, path = '') {
+  const field = (name) => path ? `${path}.${name}` : name;
   return {
-    segment_reference: string(body.segmentReference, 'segmentReference', { required: true, max: 255 }),
-    sequence: integer(body.sequence === undefined ? 0 : body.sequence, 'sequence', { required: true, min: 0, max: 100_000 }),
-    from_endpoint: string(body.fromEndpoint, 'fromEndpoint', { required: true, max: 255 }),
-    to_endpoint: string(body.toEndpoint, 'toEndpoint', { required: true, max: 255 }),
-    length_metres: number(body.lengthMetres, 'lengthMetres', { min: 0, max: 1_000_000 }),
-    notes: string(body.notes, 'notes', { max: 20_000 }) || ''
+    segment_reference: string(body.segmentReference, field('segmentReference'), { required: true, max: 255 }),
+    sequence: integer(body.sequence === undefined ? 0 : body.sequence, field('sequence'), { required: true, min: 0, max: 100_000 }),
+    from_endpoint: string(body.fromEndpoint, field('fromEndpoint'), { required: true, max: 255 }),
+    to_endpoint: string(body.toEndpoint, field('toEndpoint'), { required: true, max: 255 }),
+    length_metres: number(body.lengthMetres, field('lengthMetres'), { min: 0, max: 1_000_000 }),
+    notes: string(body.notes, field('notes'), { max: 20_000 }) || ''
   };
+}
+
+async function normalizedSegmentValues(trx, body, path, pack, circuit) {
+  const input = { ...body, sequence: body.sequence === undefined ? 0 : body.sequence };
+  if (MEDIA.includes(circuit.media)) return cableSegmentValues(trx, input, path, pack.site_id, circuit.media);
+  knownKeys(input, ['segmentReference', 'sequence', 'fromEndpoint', 'toEndpoint', 'lengthMetres', 'notes'], path);
+  return legacySegmentValues(input, path);
+}
+
+async function validateStoredChain(trx, circuit, path) {
+  if (!MEDIA.includes(circuit.media)) return;
+  const rows = await trx('segments').where({ circuit_id: circuit.id });
+  validateChain(rows.map((values) => ({ values })), path);
 }
 
 async function requirementValues(trx, body) {
@@ -646,7 +692,9 @@ router.put('/work-packages/:workPackagePublicId/circuits/:publicId', auth.requir
     await db.transaction(async (trx) => {
       const pack = await workPackageRow(trx, req.params.workPackagePublicId);
       assertMutable(pack);
-      await updateChild(trx, 'circuits', { public_id: uuid(req.params.publicId, 'publicId'), work_package_id: pack.id }, requestedVersion, circuitValues(req.body), 'circuit_not_found', 'Circuit not found');
+      const current = await circuitRow(trx, pack.id, req.params.publicId); const values = circuitValues(req.body);
+      if (current.media !== values.media && await trx('segments').where({ circuit_id: current.id }).first()) throw httpError(409, 'circuit_media_change_has_segments', 'Remove the circuit segments before changing its media');
+      await updateChild(trx, 'circuits', { public_id: uuid(req.params.publicId, 'publicId'), work_package_id: pack.id }, requestedVersion, values, 'circuit_not_found', 'Circuit not found');
       await touchPackage(trx, pack);
       await audit.record(trx, req.user.id, 'circuit.update', 'circuit', req.params.publicId);
     });
@@ -662,11 +710,12 @@ async function circuitRow(trx, workPackageId, publicId) {
 
 router.post('/work-packages/:workPackagePublicId/circuits/:circuitPublicId/segments', auth.requireWrite, async (req, res, next) => {
   try {
-    knownKeys(req.body, ['segmentReference', 'sequence', 'fromEndpoint', 'toEndpoint', 'lengthMetres', 'notes']);
+    knownKeys(req.body, SEGMENT_KEYS);
     await db.transaction(async (trx) => {
       const pack = await workPackageRow(trx, req.params.workPackagePublicId); const circuit = await circuitRow(trx, pack.id, req.params.circuitPublicId); const publicId = id();
       assertMutable(pack);
-      await trx('segments').insert({ public_id: publicId, circuit_id: circuit.id, ...segmentValues(req.body) });
+      await trx('segments').insert({ public_id: publicId, circuit_id: circuit.id, ...(await normalizedSegmentValues(trx, req.body, 'segment', pack, circuit)) });
+      await validateStoredChain(trx, circuit, 'segments');
       await touchPackage(trx, pack);
       await audit.record(trx, req.user.id, 'segment.create', 'segment', publicId);
     });
@@ -676,12 +725,13 @@ router.post('/work-packages/:workPackagePublicId/circuits/:circuitPublicId/segme
 
 router.put('/work-packages/:workPackagePublicId/circuits/:circuitPublicId/segments/:publicId', auth.requireWrite, async (req, res, next) => {
   try {
-    knownKeys(req.body, ['segmentReference', 'sequence', 'fromEndpoint', 'toEndpoint', 'lengthMetres', 'notes', '_baseVersion']);
+    knownKeys(req.body, [...SEGMENT_KEYS, '_baseVersion']);
     const requestedVersion = baseVersion(req.body);
     await db.transaction(async (trx) => {
       const pack = await workPackageRow(trx, req.params.workPackagePublicId); const circuit = await circuitRow(trx, pack.id, req.params.circuitPublicId);
       assertMutable(pack);
-      await updateChild(trx, 'segments', { public_id: uuid(req.params.publicId, 'publicId'), circuit_id: circuit.id }, requestedVersion, segmentValues(req.body), 'segment_not_found', 'Segment not found');
+      await updateChild(trx, 'segments', { public_id: uuid(req.params.publicId, 'publicId'), circuit_id: circuit.id }, requestedVersion, await normalizedSegmentValues(trx, req.body, 'segment', pack, circuit), 'segment_not_found', 'Segment not found');
+      await validateStoredChain(trx, circuit, 'segments');
       await touchPackage(trx, pack);
       await audit.record(trx, req.user.id, 'segment.update', 'segment', req.params.publicId);
     });
@@ -775,10 +825,11 @@ router.get('/work-packages/:publicId/export', async (req, res, next) => {
     if (format === 'json') return res.type('application/json').attachment(`${fileName}.json`).send(JSON.stringify(pack, null, 2));
     if (format === 'print') {
       const workRows = pack.workItems.map((item) => [item.itemReference, item.title, item.status, item.leadAssignee || '', item.assignees.join(', '), item.completedAt || '']);
-      const segmentRows = pack.circuits.flatMap((circuit) => circuit.segments.map((segment) => [circuit.circuitReference, circuit.media, segment.segmentReference, segment.fromEndpoint, segment.toEndpoint, segment.lengthMetres === null ? '' : segment.lengthMetres, segment.notes]));
+      const mediaDetail = (circuit, segment) => circuit.media === 'fibre' ? `${segment.fibreType} · ${segment.fibreMode} · ${segment.fibreSimplex ? 'simplex' : 'duplex'} · ${segment.itemType}${segment.stockLengthMetres === null ? '' : ` · stock ${segment.stockLengthMetres}m`}` : circuit.media === 'copper' ? `${segment.copperCategory} · ${segment.copperShielding} · ${segment.copperPinout}` : `${segment.dacConnector} · ${segment.dacMedia} · ${segment.dacDirection}`;
+      const segmentRows = pack.circuits.flatMap((circuit) => circuit.segments.map((segment) => [circuit.circuitReference, circuit.media, segment.segmentReference, segment.fromEndpoint, segment.fromConnector, segment.toEndpoint, segment.toConnector, segment.lengthMetres === null ? '' : segment.lengthMetres, mediaDetail(circuit, segment), segment.notes]));
       const requirementRows = pack.consumableRequirements.map((requirement) => [requirement.description, requirement.quantityRequired, requirement.unit || '']);
       const photos = [{ label: 'Package', photos: pack.handoverPhotos }, ...pack.workItems.map((item) => ({ label: item.itemReference, photos: item.handoverPhotos }))].flatMap((group) => group.photos.map((photo) => `<figure><img src="/api/photos/${encodeURIComponent(photo.publicId)}/content" alt="${escapeHtml(photo.name)}"><figcaption><strong>${escapeHtml(group.label)} · ${escapeHtml(photo.name)}</strong><br>${escapeHtml(photo.description)}</figcaption></figure>`)).join('');
-      const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(pack.packageReference)} print export</title><link rel="stylesheet" href="/css/styles.css"></head><body class="print-export"><main class="print-pack"><header><p class="eyebrow">${escapeHtml(pack.site.code)} — ${escapeHtml(pack.site.name)}</p><h1>${escapeHtml(pack.packageReference)}</h1><h2>${escapeHtml(pack.title)}</h2><p>${escapeHtml(pack.description)}</p><dl><dt>Status</dt><dd>${escapeHtml(pack.status)}</dd><dt>Project</dt><dd>${escapeHtml(pack.projectReference || '')}</dd><dt>External reference</dt><dd>${escapeHtml(pack.externalReference || '')}</dd><dt>Lead</dt><dd>${escapeHtml(pack.leadAssignee || '')}</dd><dt>Assignees</dt><dd>${escapeHtml(pack.assignees.join(', '))}</dd></dl></header><section><h2>Work items</h2>${printTable(['Reference', 'Title', 'Status', 'Lead', 'Assignees', 'Completed'], workRows)}</section><section><h2>Connections</h2>${printTable(['Circuit', 'Media', 'Segment', 'From', 'To', 'Length (m)', 'Notes'], segmentRows)}</section><section><h2>Requirements</h2>${printTable(['Description', 'Quantity', 'Unit'], requirementRows)}</section>${photos ? `<section class="print-photos"><h2>Handover evidence</h2>${photos}</section>` : ''}</main></body></html>`;
+      const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(pack.packageReference)} print export</title><link rel="stylesheet" href="/css/styles.css"></head><body class="print-export"><main class="print-pack"><header><p class="eyebrow">${escapeHtml(pack.site.code)} — ${escapeHtml(pack.site.name)}</p><h1>${escapeHtml(pack.packageReference)}</h1><h2>${escapeHtml(pack.title)}</h2><p>${escapeHtml(pack.description)}</p><dl><dt>Status</dt><dd>${escapeHtml(pack.status)}</dd><dt>Project</dt><dd>${escapeHtml(pack.projectReference || '')}</dd><dt>External reference</dt><dd>${escapeHtml(pack.externalReference || '')}</dd><dt>Lead</dt><dd>${escapeHtml(pack.leadAssignee || '')}</dd><dt>Assignees</dt><dd>${escapeHtml(pack.assignees.join(', '))}</dd></dl></header><section><h2>Work items</h2>${printTable(['Reference', 'Title', 'Status', 'Lead', 'Assignees', 'Completed'], workRows)}</section><section><h2>Cable schedules</h2>${printTable(['Circuit', 'Media', 'Segment', 'From', 'Connector', 'To', 'Connector', 'Length (m)', 'Media details', 'Notes'], segmentRows)}</section><section><h2>Requirements</h2>${printTable(['Description', 'Quantity', 'Unit'], requirementRows)}</section>${photos ? `<section class="print-photos"><h2>Handover evidence</h2>${photos}</section>` : ''}</main></body></html>`;
       return res.type('html').send(html);
     }
     if (format !== 'csv') throw httpError(422, 'export_format_invalid', 'Export format must be json, csv, or print');
@@ -786,12 +837,12 @@ router.get('/work-packages/:publicId/export', async (req, res, next) => {
       const safe = String(value === null || value === undefined ? '' : value).replace(/"/g, '""').replace(/^[=+\-@]/, "'$&");
       return `"${safe}"`;
     };
-    const rows = [['record_type', 'parent_reference', 'reference', 'title_or_description', 'status', 'lead_assignee', 'assignees', 'from', 'to', 'media', 'length_metres', 'quantity', 'unit', 'comment', 'completed_at']];
+    const rows = [['record_type', 'parent_reference', 'reference', 'title_or_description', 'status', 'lead_assignee', 'assignees', 'from', 'to', 'media', 'length_metres', 'quantity', 'unit', 'comment', 'completed_at', 'from_mode', 'from_port', 'from_connector', 'to_mode', 'to_port', 'to_connector', 'fibre_type', 'fibre_mode', 'fibre_simplex', 'stock_length_metres', 'item_type', 'copper_category', 'copper_shielding', 'copper_pinout', 'dac_connector', 'dac_media', 'dac_direction']];
     rows.push(['work_package', pack.site.code, pack.packageReference, pack.title, pack.status, pack.leadAssignee, pack.assignees.join('; '), '', '', '', '', '', '', pack.description, pack.completedAt]);
     for (const item of pack.workItems) rows.push(['work_item', pack.packageReference, item.itemReference, item.title, item.status, item.leadAssignee, item.assignees.join('; '), '', '', '', '', '', '', item.description, item.completedAt]);
     for (const circuit of pack.circuits) {
       rows.push(['circuit', pack.packageReference, circuit.circuitReference, circuit.description, circuit.status, '', '', '', '', circuit.media, '', '', '', '', '']);
-      for (const segment of circuit.segments) rows.push(['segment', circuit.circuitReference, segment.segmentReference, '', '', '', '', segment.fromEndpoint, segment.toEndpoint, circuit.media, segment.lengthMetres, '', '', segment.notes, '']);
+      for (const segment of circuit.segments) rows.push(['segment', circuit.circuitReference, segment.segmentReference, '', '', '', '', segment.fromEndpoint, segment.toEndpoint, circuit.media, segment.lengthMetres, '', '', segment.notes, '', segment.fromEndpointMode, segment.fromPort, segment.fromConnector, segment.toEndpointMode, segment.toPort, segment.toConnector, segment.fibreType, segment.fibreMode, segment.fibreSimplex, segment.stockLengthMetres, segment.itemType, segment.copperCategory, segment.copperShielding, segment.copperPinout, segment.dacConnector, segment.dacMedia, segment.dacDirection]);
     }
     for (const requirement of pack.consumableRequirements) rows.push(['requirement', pack.packageReference, requirement.cataloguePublicId || '', requirement.description, '', '', '', '', '', '', '', requirement.quantityRequired, requirement.unit, '', '']);
     for (const photo of pack.handoverPhotos) rows.push(['handover_photo', pack.packageReference, photo.publicId, photo.name, '', '', '', '', '', photo.mediaType, '', '', '', photo.description, photo.createdAt]);

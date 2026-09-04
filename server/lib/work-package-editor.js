@@ -4,6 +4,7 @@ const db = require('../db/knex');
 const audit = require('./audit');
 const { packageDetail } = require('./work-packages');
 const { assertMutable } = require('./work-package-locks');
+const { MEDIA, segmentValues, validateChain, applyRackChanges } = require('./cable-schedules');
 const { httpError } = require('./errors');
 const { knownKeys, string, integer, number, array, enumeration, uuid } = require('./validation');
 
@@ -35,30 +36,27 @@ function itemInput(value, index) {
   } };
 }
 
-function segmentInput(value, circuitIndex, index) {
+async function segmentInput(trx, value, circuitIndex, index, siteId, media) {
   const path = `circuits[${circuitIndex}].segments[${index}]`;
-  knownKeys(value, ['publicId', '_baseVersion', 'segmentReference', 'sequence', 'fromEndpoint', 'toEndpoint', 'lengthMetres', 'notes'], path);
+  knownKeys(value, ['publicId', '_baseVersion', 'segmentReference', 'sequence', 'fromEndpoint', 'toEndpoint', 'fromEndpointMode', 'fromDevicePublicId', 'fromTerminationPositionPublicId', 'fromPort', 'toEndpointMode', 'toDevicePublicId', 'toTerminationPositionPublicId', 'toPort', 'fromConnector', 'toConnector', 'lengthMetres', 'notes', 'fibreType', 'fibreMode', 'fibreSimplex', 'stockLengthMetres', 'itemType', 'copperCategory', 'copperShielding', 'copperPinout', 'dacConnector', 'dacMedia', 'dacDirection'], path);
   const key = identity(value, path);
-  return { ...key, values: {
-    segment_reference: string(value.segmentReference, `${path}.segmentReference`, { required: true, max: 255 }),
-    sequence: integer(value.sequence === undefined ? index : value.sequence, `${path}.sequence`, { required: true, min: 0, max: 100_000 }),
-    from_endpoint: string(value.fromEndpoint, `${path}.fromEndpoint`, { required: true, max: 255 }),
-    to_endpoint: string(value.toEndpoint, `${path}.toEndpoint`, { required: true, max: 255 }),
-    length_metres: number(value.lengthMetres, `${path}.lengthMetres`, { min: 0, max: 1_000_000 }),
-    notes: string(value.notes, `${path}.notes`, { max: 20_000 }) || ''
-  } };
+  return { ...key, values: await segmentValues(trx, { ...value, sequence: value.sequence === undefined ? index : value.sequence }, path, siteId, media) };
 }
 
-function circuitInput(value, index) {
+async function circuitInput(trx, value, index, siteId) {
   const path = `circuits[${index}]`;
   knownKeys(value, ['publicId', '_baseVersion', 'circuitReference', 'description', 'media', 'status', 'segments'], path);
   const key = identity(value, path);
+  const media = enumeration(value.media, `${path}.media`, MEDIA, true);
+  const segments = [];
+  for (const [segmentIndex, segment] of array(value.segments, `${path}.segments`, { max: 1000 }).entries()) segments.push(await segmentInput(trx, segment, index, segmentIndex, siteId, media));
+  validateChain(segments, path);
   return { ...key, values: {
     circuit_reference: string(value.circuitReference, `${path}.circuitReference`, { required: true, max: 255 }),
     description: string(value.description, `${path}.description`, { max: 20_000 }) || '',
-    media: string(value.media, `${path}.media`, { required: true, max: 64 }),
+    media,
     status: enumeration(value.status || 'planned', `${path}.status`, ITEM_STATUSES, true)
-  }, segments: array(value.segments, `${path}.segments`, { max: 1000 }).map((segment, segmentIndex) => segmentInput(segment, index, segmentIndex)) };
+  }, segments };
 }
 
 async function requirementInput(trx, value, index) {
@@ -120,7 +118,7 @@ async function syncRows(trx, table, parentKey, parentId, records, extraInsert = 
 /** @param {string} publicId @param {unknown} input @param {number} actorUserId */
 async function saveSnapshot(publicId, input, actorUserId) {
   return db.transaction(async (trx) => {
-    knownKeys(input, ['saveId', '_baseVersion', 'packageReference', 'externalReference', 'projectReference', 'title', 'description', 'status', 'leadAssignee', 'assignees', 'workItems', 'circuits', 'consumableRequirements']);
+    knownKeys(input, ['saveId', '_baseVersion', 'packageReference', 'externalReference', 'projectReference', 'title', 'description', 'status', 'leadAssignee', 'assignees', 'workItems', 'circuits', 'consumableRequirements', 'scheduleRackChanges']);
     const saveId = uuid(input.saveId, 'saveId');
     const requestedVersion = integer(input._baseVersion, '_baseVersion', { required: true, min: 0 });
     const pack = await trx('work_packages').where({ public_id: uuid(publicId, 'workPackagePublicId') }).first();
@@ -132,6 +130,7 @@ async function saveSnapshot(publicId, input, actorUserId) {
     }
     assertMutable(pack);
     if (pack.version !== requestedVersion) { const error = httpError(409, 'version_conflict', 'The work package changed since it was loaded'); error.serverVersion = pack.version; throw error; }
+    await applyRackChanges(trx, pack, array(input.scheduleRackChanges, 'scheduleRackChanges', { max: 1000 }), actorUserId);
     const status = enumeration(input.status, 'status', OPEN_STATUSES, true);
     const packageValues = {
       package_ref: string(input.packageReference, 'packageReference', { required: true, max: 255 }),
@@ -143,7 +142,8 @@ async function saveSnapshot(publicId, input, actorUserId) {
       assignees_json: JSON.stringify(assignees(input.assignees, 'assignees'))
     };
     const items = array(input.workItems, 'workItems', { max: 1000 }).map(itemInput);
-    const circuits = array(input.circuits, 'circuits', { max: 10_000 }).map(circuitInput);
+    const circuits = [];
+    for (const [index, circuit] of array(input.circuits, 'circuits', { max: 10_000 }).entries()) circuits.push(await circuitInput(trx, circuit, index, pack.site_id));
     const requirements = [];
     for (const [index, value] of array(input.consumableRequirements, 'consumableRequirements', { max: 1000 }).entries()) requirements.push(await requirementInput(trx, value, index));
     for (const item of items) {

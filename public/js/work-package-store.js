@@ -10,6 +10,7 @@ globalThis.addEventListener('offline-operation-complete', (event) => {
   const detail = event instanceof CustomEvent ? event.detail : null;
   if (!active || detail?.operation?.dirtyPackagePublicId !== active.publicId) return;
   if (detail.result?.publicId === active.publicId) mergeLivePackage(active.pack, detail.result);
+  active.pack.scheduleRackChanges = [];
   active.dirty = false;
   if (active.timer) { clearTimeout(active.timer); active.timer = null; }
   emit('saved');
@@ -60,8 +61,17 @@ function payload(pack) {
     packageReference: pack.packageReference, externalReference: pack.externalReference, projectReference: pack.projectReference,
     title: pack.title, description: pack.description, status: pack.status, leadAssignee: pack.leadAssignee, assignees: pack.assignees,
     workItems: pack.workItems.map((item) => ({ publicId: item.publicId, _baseVersion: item.version, itemReference: item.itemReference, title: item.title, description: item.description, status: item.status, sequence: item.sequence, leadAssignee: item.leadAssignee, assignees: item.assignees })),
-    circuits: pack.circuits.map((circuit) => ({ publicId: circuit.publicId, _baseVersion: circuit.version, circuitReference: circuit.circuitReference, description: circuit.description, media: circuit.media, status: circuit.status, segments: circuit.segments.map((segment) => ({ publicId: segment.publicId, _baseVersion: segment.version, segmentReference: segment.segmentReference, sequence: segment.sequence, fromEndpoint: segment.fromEndpoint, toEndpoint: segment.toEndpoint, lengthMetres: segment.lengthMetres, notes: segment.notes })) })),
-    consumableRequirements: pack.consumableRequirements.map((requirement) => ({ publicId: requirement.publicId, _baseVersion: requirement.version, cataloguePublicId: requirement.cataloguePublicId, description: requirement.description, quantityRequired: requirement.quantityRequired, unit: requirement.unit }))
+    circuits: pack.circuits.map((circuit) => ({ publicId: circuit.publicId, _baseVersion: circuit.version, circuitReference: circuit.circuitReference, description: circuit.description, media: circuit.media, status: circuit.status, segments: circuit.segments.map((segment) => ({
+      publicId: segment.publicId, _baseVersion: segment.version, segmentReference: segment.segmentReference, sequence: segment.sequence,
+      fromEndpoint: segment.fromEndpoint, fromEndpointMode: segment.fromEndpointMode, fromDevicePublicId: segment.fromDevicePublicId, fromTerminationPositionPublicId: segment.fromTerminationPositionPublicId, fromPort: segment.fromPort,
+      toEndpoint: segment.toEndpoint, toEndpointMode: segment.toEndpointMode, toDevicePublicId: segment.toDevicePublicId, toTerminationPositionPublicId: segment.toTerminationPositionPublicId, toPort: segment.toPort,
+      fromConnector: segment.fromConnector, toConnector: segment.toConnector, lengthMetres: segment.lengthMetres, notes: segment.notes,
+      fibreType: segment.fibreType, fibreMode: segment.fibreMode, fibreSimplex: segment.fibreSimplex, stockLengthMetres: segment.stockLengthMetres, itemType: segment.itemType,
+      copperCategory: segment.copperCategory, copperShielding: segment.copperShielding, copperPinout: segment.copperPinout,
+      dacConnector: segment.dacConnector, dacMedia: segment.dacMedia, dacDirection: segment.dacDirection
+    })) })),
+    consumableRequirements: pack.consumableRequirements.map((requirement) => ({ publicId: requirement.publicId, _baseVersion: requirement.version, cataloguePublicId: requirement.cataloguePublicId, description: requirement.description, quantityRequired: requirement.quantityRequired, unit: requirement.unit })),
+    scheduleRackChanges: pack.scheduleRackChanges || []
   };
 }
 
@@ -86,8 +96,8 @@ async function performSave() {
         queueMetadata: { operationKey: `work-package:${state.publicId}`, entityType: 'work_package', entityPublicId: state.publicId, dirtyPackagePublicId: state.publicId, label: `Save ${state.pack.packageReference}` }
       }));
       if ('queued' in result && result.queued) { emit('queued'); return state.pack; }
-      if (state.revision === revision) { mergeLivePackage(state.pack, result); state.dirty = false; await OfflineStore.delete('dirty-work-packages', state.publicId); emit('saved'); }
-      else { mergeVersions(state.pack, result); await persistDirty(); emit('changed'); scheduleSave(); }
+      if (state.revision === revision) { mergeLivePackage(state.pack, result); state.pack.scheduleRackChanges = []; state.dirty = false; await OfflineStore.delete('dirty-work-packages', state.publicId); emit('saved'); }
+      else { mergeVersions(state.pack, result); const appliedDevices = new Set(body.scheduleRackChanges.map((entry) => entry.devicePublicId)); state.pack.scheduleRackChanges = (state.pack.scheduleRackChanges || []).filter((entry) => !appliedDevices.has(entry.devicePublicId)); await persistDirty(); emit('changed'); scheduleSave(); }
       return state.pack;
     } catch (error) {
       await persistDirty(); emit(error && typeof error === 'object' && 'code' in error && error.code === 'version_conflict' ? 'conflict' : 'error', error); throw error;
@@ -132,6 +142,7 @@ export async function openPackage(publicId) {
   const server = /** @type {WorkPackage} */ (await api(`/work-packages/${encodeURIComponent(publicId)}`));
   const dirty = /** @type {{ snapshot?: WorkPackage } | undefined} */ (await OfflineStore.get('dirty-work-packages', publicId));
   const pack = dirty?.snapshot?.publicId === publicId ? /** @type {WorkPackage} */ (dirty.snapshot) : server;
+  pack.scheduleRackChanges ||= [];
   active = { publicId, pack, dirty: Boolean(dirty), revision: 0, timer: null, tail: Promise.resolve(), listeners: new Set() };
   if (dirty) { mergeVersions(pack, server); emit('changed'); scheduleSave(); }
   return pack;
