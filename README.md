@@ -21,7 +21,7 @@ terminology and interpretation remain plugin-owned.
 
 ## Status
 
-This source repository is public. Version `1.2.0-rc.1` is a release candidate.
+This source repository is public. Version `1.2.0-rc.2` is a release candidate.
 Plugin API V2 adds validated data-only presentation profiles and plugin-scoped
 typed extension values while retaining compatible Plugin API V1 packages.
 The version label identifies the candidate; it is not a production-readiness
