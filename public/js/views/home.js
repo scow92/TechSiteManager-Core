@@ -63,12 +63,13 @@ function searchResult(record, terms, initialView) {
 
 /** @param {User} user @param {() => Promise<void>} render */
 export async function homeView(user, render) {
-  const [packages, providers, synchronization, sites, presentation] = await Promise.all([
+  const [packages, providers, synchronization, sites, presentation, workload] = await Promise.all([
     /** @type {Promise<WorkPackageSummary[]>} */ (api('/work-packages')),
     /** @type {Promise<ProviderDescriptor[]>} */ (api('/import-providers')),
     offlineStatus(render),
     /** @type {Promise<Site[]>} */ (api('/sites')),
-    /** @type {Promise<PresentationProfile | null>} */ (api('/presentation-profiles/work-package'))
+    /** @type {Promise<PresentationProfile | null>} */ (api('/presentation-profiles/work-package')),
+    /** @type {Promise<{assignmentName:string,weeklyCapacityHours:number,activePackageCount:number,activeWorkItemCount:number,packages:{publicId:string,packageReference:string}[]}[]>} */ (api('/auth/workload'))
   ]);
   const terms = presentation?.terms || { singular: 'Work package', plural: 'Work packages' };
   const initialView = presentation?.views[0]?.id || 'details';
@@ -119,10 +120,18 @@ export async function homeView(user, render) {
   const active = packages.filter((entry) => entry.status !== 'complete');
   const completed = packages.filter((entry) => entry.status === 'complete');
   const add = user.role !== 'viewer' ? el('button', { type: 'button', class: 'secondary', onclick: () => { create.hidden = false; create.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } }, `Add ${terms.singular.toLowerCase()}`) : null;
+  const workloadCards = workload.map((entry) => el('article', { class: 'card' },
+    el('h3', {}, entry.assignmentName),
+    el('p', {}, `${entry.activePackageCount} active package${entry.activePackageCount === 1 ? '' : 's'} · ${entry.activeWorkItemCount} active work item${entry.activeWorkItemCount === 1 ? '' : 's'}`),
+    el('p', { class: 'muted' }, `${entry.weeklyCapacityHours} h weekly capacity`),
+    ...entry.packages.slice(0, 5).map((pack) => el('a', { href: `#package/${encodeURIComponent(pack.publicId)}/${initialView}` }, pack.packageReference))));
+  const workloadPanel = workload.length ? el('section', { class: 'panel stack workload-panel' },
+    el('div', { class: 'section-head' }, el('h2', {}, ['admin', 'manager'].includes(user.role) ? 'Team workload' : 'My workload'), el('span', { class: 'count-badge' }, workload.length)),
+    el('div', { class: 'card-grid' }, ...workloadCards)) : null;
 
   app.replaceChildren(el('section', { class: 'view start-view' }, ...(synchronization ? [synchronization] : []),
     el('header', { class: 'start-hero page-head' }, el('div', {}, el('h1', {}, 'Home'), el('p', { class: 'page-subtitle' }, `Search ${terms.plural.toLowerCase()}, sites, and infrastructure from one place.`)), ...(add ? [el('div', { class: 'page-actions' }, add)] : [])),
-    el('div', { class: 'start-search-grid' }, recordSearch.node), el('div', { class: 'start-cards' }, ...importCards), create,
+    el('div', { class: 'start-search-grid' }, recordSearch.node), ...(workloadPanel ? [workloadPanel] : []), el('div', { class: 'start-cards' }, ...importCards), create,
     el('h2', { class: 'start-sub' }, `Recent ${terms.plural.toLowerCase()}`), el('div', { class: 'start-jobs' }, ...(active.length ? active.slice(0, 12).map((record) => packageResult(record, terms, initialView)) : [el('div', { class: 'empty-state compact' }, el('p', {}, `No active ${terms.plural.toLowerCase()} yet.`))])),
     el('h2', { class: 'start-sub' }, `Recently completed ${terms.plural.toLowerCase()}`), el('div', { class: 'start-jobs' }, ...(completed.length ? completed.slice(0, 12).map((record) => packageResult(record, terms, initialView)) : [el('div', { class: 'empty-state compact' }, el('p', {}, `No completed ${terms.plural.toLowerCase()} yet.`))]))));
 }

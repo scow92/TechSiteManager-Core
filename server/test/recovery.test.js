@@ -16,7 +16,7 @@ process.env.NODE_ENV = 'test';
 const knex = require('knex');
 const db = require('../db/knex');
 const knexfile = require('../knexfile').test;
-const { createBackup, restoreBackup, verify, sha256 } = require('../lib/backup');
+const { backupAge, createBackup, loadEncryptionKey, restoreBackup, verify, sha256 } = require('../lib/backup');
 
 test.after(async () => { await db.destroy(); fs.rmSync(testRoot, { recursive: true, force: true }); });
 
@@ -25,9 +25,9 @@ test('fresh generic baseline installs with integrity and no legacy migration his
   assert.equal((await db.raw('PRAGMA integrity_check'))[0].integrity_check, 'ok');
   assert.deepEqual(await db.raw('PRAGMA foreign_key_check'), []);
   const migrations = await db('knex_migrations').select('name');
-  assert.deepEqual(migrations.map((row) => row.name), ['0001_generic_baseline.js', '0002_plugin_api_v2_extensions.js', '0003_phase2_infrastructure.js', '0004_phase3_work_packages.js', '0005_phase4_cable_schedules.js']);
+  assert.deepEqual(migrations.map((row) => row.name), ['0001_generic_baseline.js', '0002_plugin_api_v2_extensions.js', '0003_phase2_infrastructure.js', '0004_phase3_work_packages.js', '0005_phase4_cable_schedules.js', '0006_phase5_operations.js']);
   const tables = (await db.raw("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).map((row) => row.name);
-  for (const expected of ['sites', 'rooms', 'racks', 'termination_points', 'termination_positions', 'devices', 'distance_samples', 'photos', 'work_packages', 'work_items', 'work_package_saves', 'circuits', 'segments', 'extension_values', 'import_sources', 'import_runs', 'import_entity_links', 'import_field_ownership', 'import_drafts']) assert.ok(tables.includes(expected));
+  for (const expected of ['sites', 'rooms', 'racks', 'termination_points', 'termination_positions', 'devices', 'distance_samples', 'photos', 'work_packages', 'work_items', 'work_package_saves', 'circuits', 'segments', 'consumable_catalogue', 'consumable_requirements', 'fibre_sku_catalogue', 'engineer_profiles', 'push_subscriptions', 'extension_values', 'import_sources', 'import_runs', 'import_entity_links', 'import_field_ownership', 'import_drafts']) assert.ok(tables.includes(expected));
 });
 
 test('database constraints defend roles, statuses, quantities, and foreign keys', async () => {
@@ -59,6 +59,9 @@ test('SQLite-safe backup and restore preserve generic records and provenance', a
   const photoBytes = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
   await db('photos').insert({ public_id: crypto.randomUUID(), entity_type: 'rack', entity_public_id: rackPublicId, name: 'Fictional recovery rack', media_type: 'image/jpeg', content: photoBytes, is_current: true });
   const [userId] = await db('users').insert({ public_id: crypto.randomUUID(), username: 'recovery-admin', password_hash: 'test', role: 'admin', display_name: 'Recovery Admin', active: 1 });
+  await db('engineer_profiles').insert({ user_id: userId, assignment_name: 'Recovery Engineer', job_title: 'Fictional recovery role', weekly_capacity_hours: 35 });
+  await db('push_subscriptions').insert({ public_id: crypto.randomUUID(), user_id: userId, endpoint: 'https://push.example.invalid/recovery-fictional', p256dh: 'fictionalP256dh', auth: 'fictionalAuth' });
+  await db('fibre_sku_catalogue').insert({ public_id: crypto.randomUUID(), sku: 'SKU-RECOVERY-15', description: 'Fictional recovery lead', length_metres: 15, unit_price: 9.5 });
   const packagePublicId = crypto.randomUUID(); const workItemPublicId = crypto.randomUUID(); const packagePhotoPublicId = crypto.randomUUID(); const itemPhotoPublicId = crypto.randomUUID(); const saveId = crypto.randomUUID();
   const [packageId] = await db('work_packages').insert({ public_id: packagePublicId, site_id: site.id, package_ref: 'PKG-RECOVERY-1', external_reference: 'EXT-RECOVERY-1', project_reference: 'PROJECT-RECOVERY', title: 'Recovery fixture', status: 'active', lead_assignee: 'recovery-admin', assignees_json: '["recovery-admin"]' });
   const [workItemId] = await db('work_items').insert({ public_id: workItemPublicId, work_package_id: packageId, item_reference: 'ITEM-RECOVERY-1', title: 'Recovery handover item', status: 'active', lead_assignee: 'recovery-admin', assignees_json: '["recovery-admin"]' });
@@ -94,8 +97,35 @@ test('SQLite-safe backup and restore preserve generic records and provenance', a
     assert.equal(Number((await restoredDb('distance_samples').where({ endpoint_a_device_id: firstDeviceId }).first()).length_metres), 14.5);
     const restoredSegment = await restoredDb('segments').where({ public_id: segmentPublicId }).first(); assert.equal(restoredSegment.from_device_id, firstDeviceId); assert.equal(restoredSegment.to_termination_position_id, positionId); assert.equal(restoredSegment.fibre_simplex, 1); assert.equal(Number(restoredSegment.stock_length_metres), 15);
     assert.deepEqual((await restoredDb('photos').where({ entity_public_id: rackPublicId }).first()).content, photoBytes);
+    assert.equal((await restoredDb('engineer_profiles').where({ user_id: userId }).first()).assignment_name, 'Recovery Engineer');
+    assert.equal((await restoredDb('push_subscriptions').where({ user_id: userId }).first()).endpoint, 'https://push.example.invalid/recovery-fictional');
+    assert.equal((await restoredDb('fibre_sku_catalogue').where({ sku: 'SKU-RECOVERY-15' }).first()).description, 'Fictional recovery lead');
     assert.deepEqual(await restoredDb.raw('PRAGMA foreign_key_check'), []);
   } finally { await restoredDb.destroy(); }
+});
+
+test('encrypted backup restores only with the protected key and reports age', async () => {
+  const keyFile = path.join(testRoot, 'keys', 'backup.key'); fs.mkdirSync(path.dirname(keyFile), { recursive: true }); fs.writeFileSync(keyFile, crypto.randomBytes(32), { mode: 0o600 });
+  const statusFile = path.join(testRoot, 'monitoring', 'latest-backup.json'); const encryptedDir = path.join(testRoot, 'encrypted-backups'); const key = loadEncryptionKey(keyFile);
+  const { destination, manifest } = await createBackup(process.env.DB_FILE, encryptedDir, { encryptionKey: key, statusFile });
+  assert.equal(manifest.encrypted, true); assert.match(destination, /\.db\.enc$/); assert.notEqual(fs.readFileSync(destination, null).subarray(0, 15).toString(), 'SQLite format 3');
+  assert.deepEqual(backupAge(statusFile, 60_000), { status: 'current', ageSeconds: 0, encrypted: true });
+  assert.equal(backupAge(statusFile, 1, Date.now() + 60_000).status, 'stale');
+  const restored = path.join(testRoot, 'encrypted-restore', 'restored.db'); restoreBackup(destination, restored, { encryptionKey: key }); verify(restored);
+  assert.throws(() => restoreBackup(destination, path.join(testRoot, 'wrong-key', 'restored.db'), { encryptionKey: crypto.randomBytes(32) }), /backup_decryption_failed/);
+  assert.throws(() => restoreBackup(destination, path.join(testRoot, 'missing-key', 'restored.db')), /backup_encryption_key_required/);
+});
+
+test('phase 5 migration preserves existing users and survives isolated down/up', async () => {
+  const file = path.join(testRoot, 'phase5-upgrade', 'upgrade.db'); fs.mkdirSync(path.dirname(file), { recursive: true }); const upgradeDb = knex({ ...knexfile, connection: { filename: file } });
+  try {
+    for (const name of ['0001_generic_baseline.js', '0002_plugin_api_v2_extensions.js', '0003_phase2_infrastructure.js', '0004_phase3_work_packages.js', '0005_phase4_cable_schedules.js']) await upgradeDb.migrate.up({ name });
+    const userPublicId = crypto.randomUUID(); await upgradeDb('users').insert({ public_id: userPublicId, username: 'phase5-upgrade-user', password_hash: 'test', role: 'engineer', display_name: 'Fictional Upgrade Engineer', active: 0 });
+    await upgradeDb.migrate.latest(); let user = await upgradeDb('users').where({ public_id: userPublicId }).first(); assert.equal(user.account_status, 'approved'); assert.equal(user.active, 0);
+    const [userId] = [user.id]; await upgradeDb('engineer_profiles').insert({ user_id: userId, assignment_name: 'Upgrade Engineer', weekly_capacity_hours: 40 }); await upgradeDb('fibre_sku_catalogue').insert({ public_id: crypto.randomUUID(), sku: 'SKU-UPGRADE-10', description: 'Fictional upgrade SKU', length_metres: 10 });
+    await upgradeDb.migrate.rollback(); user = await upgradeDb('users').where({ public_id: userPublicId }).first(); assert.equal(user.display_name, 'Fictional Upgrade Engineer'); assert.equal('account_status' in user, false);
+    await upgradeDb.migrate.latest(); user = await upgradeDb('users').where({ public_id: userPublicId }).first(); assert.equal(user.account_status, 'approved'); assert.deepEqual(await upgradeDb.raw('PRAGMA foreign_key_check'), []);
+  } finally { await upgradeDb.destroy(); }
 });
 
 test('phase 4 migration preserves legacy segments and survives isolated down/up', async () => {

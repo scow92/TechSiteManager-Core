@@ -44,6 +44,10 @@ const config = Object.freeze({
   secureTransport: boolean('SECURE_TRANSPORT', false),
   proxyMode: process.env.PROXY_MODE || 'direct',
   pluginConfigFile: process.env.PLUGIN_CONFIG_FILE ? path.resolve(process.env.PLUGIN_CONFIG_FILE) : null,
+  vapidPublicKey: process.env.VAPID_PUBLIC_KEY || null,
+  backupStatusFile: process.env.BACKUP_STATUS_FILE ? path.resolve(process.env.BACKUP_STATUS_FILE) : null,
+  maxBackupAgeMs: integer('MAX_BACKUP_AGE_HOURS', 24, 1, 24 * 365) * 60 * 60 * 1000,
+  shutdownTimeoutMs: integer('SHUTDOWN_TIMEOUT_MS', 10_000, 100, 120_000),
   draftTtlMs: integer('IMPORT_DRAFT_TTL_MS', 30 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
   pluginTimeoutMs: integer('PLUGIN_TIMEOUT_MS', 30_000, 100, 120_000)
 });
@@ -51,5 +55,6 @@ const config = Object.freeze({
 if (!['development', 'test', 'production'].includes(config.environment)) throw new Error('Invalid NODE_ENV');
 if (!['direct', 'single'].includes(config.proxyMode)) throw new Error('Invalid PROXY_MODE');
 if (!/^[A-Za-z0-9.:-]+$/.test(config.host)) throw new Error('Invalid HOST');
+if (config.vapidPublicKey && !/^[A-Za-z0-9_-]{40,200}$/.test(config.vapidPublicKey)) throw new Error('Invalid VAPID_PUBLIC_KEY');
 
 module.exports = config;

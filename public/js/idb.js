@@ -2,7 +2,7 @@
 
 (function () {
   const DB_NAME = 'techsitemanager-offline';
-  const VERSION = 3;
+  const VERSION = 4;
   function open() {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, VERSION);
@@ -15,6 +15,7 @@
         if (!database.objectStoreNames.contains('pending-logout')) database.createObjectStore('pending-logout');
         if (!database.objectStoreNames.contains('id-remaps')) database.createObjectStore('id-remaps', { keyPath: 'temporaryId' });
         if (!database.objectStoreNames.contains('operation-completions')) database.createObjectStore('operation-completions', { keyPath: 'id' });
+        if (!database.objectStoreNames.contains('navigation-state')) database.createObjectStore('navigation-state', { keyPath: 'userPublicId' });
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);

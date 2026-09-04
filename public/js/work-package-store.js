@@ -91,9 +91,11 @@ async function performSave() {
     if (!state.dirty || state.pack.status === 'complete') return state.pack;
     const revision = state.revision; const body = payload(state.pack); emit('saving');
     try {
+      const requiredTemporaryIds = [...new Set(JSON.stringify(body).match(/urn:offline:[0-9a-f-]+/g) || [])];
+      const queuedOperations = requiredTemporaryIds.length ? await OfflineStore.all('operation-queue') : [];
       const result = /** @type {WorkPackage & { queued?: boolean }} */ (await api(`/work-packages/${encodeURIComponent(state.publicId)}/editor`, {
         method: 'PUT', body, queueable: true,
-        queueMetadata: { operationKey: `work-package:${state.publicId}`, entityType: 'work_package', entityPublicId: state.publicId, dirtyPackagePublicId: state.publicId, label: `Save ${state.pack.packageReference}` }
+        queueMetadata: { operationKey: `work-package:${state.publicId}`, requiredTemporaryIds, dependsOn: queuedOperations.filter((operation) => requiredTemporaryIds.includes(operation.temporaryId || '')).map((operation) => operation.id), entityType: 'work_package', entityPublicId: state.publicId, dirtyPackagePublicId: state.publicId, label: `Save ${state.pack.packageReference}` }
       }));
       if ('queued' in result && result.queued) { emit('queued'); return state.pack; }
       if (state.revision === revision) { mergeLivePackage(state.pack, result); state.pack.scheduleRackChanges = []; state.dirty = false; await OfflineStore.delete('dirty-work-packages', state.publicId); emit('saved'); }
@@ -131,6 +133,7 @@ export async function flushAll() {
 /** @param {string} publicId */
 export async function openPackage(publicId) {
   if (active?.publicId === publicId) {
+    if (!navigator.onLine) return active.pack;
     const dirty = await OfflineStore.get('dirty-work-packages', publicId);
     if (!dirty) {
       const server = /** @type {WorkPackage} */ (await api(`/work-packages/${encodeURIComponent(publicId)}?refresh=${Date.now()}`));

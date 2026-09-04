@@ -7,6 +7,8 @@ const express = require('express');
 const config = require('./config');
 const auth = require('./lib/auth');
 const { errorBody, httpError } = require('./lib/errors');
+const db = require('./db/knex');
+const { backupAge } = require('./lib/backup');
 
 const PUBLIC_ROOT = path.join(__dirname, '..', 'public');
 const CSP = [
@@ -49,10 +51,16 @@ module.exports = function createApp(registry) {
   });
   app.use(express.json({ limit: '14mb', strict: true }));
   app.use(auth.session);
-  app.get('/api/health', (_req, res) => res.json({ status: registry.degraded.length ? 'degraded' : 'ready', pluginApiVersion: 2, providers: registry.providers.length, presentations: registry.presentations.length, exporters: registry.exporters.length, optionalPluginFailures: registry.degraded.length }));
+  app.get('/api/health', async (_req, res) => {
+    let database = 'ready'; try { await db.raw('SELECT 1'); } catch { database = 'unavailable'; }
+    const backup = backupAge(config.backupStatusFile, config.maxBackupAgeMs);
+    const degraded = registry.degraded.length || database !== 'ready' || ['stale', 'invalid'].includes(backup.status);
+    res.status(database === 'ready' ? 200 : 503).json({ status: degraded ? 'degraded' : 'ready', database, backup, pluginApiVersion: 2, providers: registry.providers.length, presentations: registry.presentations.length, exporters: registry.exporters.length, optionalPluginFailures: registry.degraded.length });
+  });
   app.use('/api/auth', require('./routes/auth'));
   app.use('/api', require('./routes/imports')(registry));
   app.use('/api', require('./routes/presentations')(registry));
+  app.use('/api', require('./routes/materials'));
   app.use('/api', require('./routes/core'));
 
   /** @param {import('express').Response} res */

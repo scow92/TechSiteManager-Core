@@ -852,7 +852,7 @@ router.get('/work-packages/:publicId/export', async (req, res, next) => {
 });
 
 router.get('/catalogue/consumables', async (_req, res, next) => {
-  try { res.json(await db('consumable_catalogue').select('public_id as publicId', 'catalogue_reference as catalogueReference', 'description', 'estimated_unit_price as estimatedUnitPrice', 'unit', 'active', 'version').orderBy('catalogue_reference')); } catch (error) { next(error); }
+  try { res.json((await db('consumable_catalogue').orderBy('catalogue_reference')).map((row) => ({ publicId: row.public_id, catalogueReference: row.catalogue_reference, description: row.description, estimatedUnitPrice: row.estimated_unit_price === null ? null : Number(row.estimated_unit_price), unit: row.unit, active: Boolean(row.active), version: row.version }))); } catch (error) { next(error); }
 });
 
 router.post('/catalogue/consumables', auth.requireAdmin, async (req, res, next) => {
@@ -879,12 +879,28 @@ router.put('/catalogue/consumables/:publicId', auth.requireAdmin, async (req, re
       if (!count) {
         const current = await trx('consumable_catalogue').where({ public_id: req.params.publicId }).first();
         if (!current) throw httpError(404, 'catalogue_record_not_found', 'Consumable catalogue record not found');
-        throw httpError(409, 'version_conflict', 'The catalogue record changed since it was loaded');
+        const conflict = httpError(409, 'version_conflict', 'The catalogue record changed since it was loaded'); conflict.serverVersion = current.version; throw conflict;
       }
       await audit.record(trx, req.user.id, 'consumable.update', 'consumable', req.params.publicId);
       return trx('consumable_catalogue').where({ public_id: req.params.publicId }).first();
     });
     res.json({ publicId: updated.public_id, catalogueReference: updated.catalogue_reference, description: updated.description, estimatedUnitPrice: updated.estimated_unit_price, unit: updated.unit, active: Boolean(updated.active), version: updated.version });
+  } catch (error) { next(error); }
+});
+
+router.delete('/catalogue/consumables/:publicId', auth.requireAdmin, async (req, res, next) => {
+  try {
+    const requestedVersion = integer(Number(req.query.baseVersion), 'baseVersion', { required: true, min: 0 });
+    await db.transaction(async (trx) => {
+      const current = await trx('consumable_catalogue').where({ public_id: uuid(req.params.publicId, 'publicId') }).first();
+      if (!current) throw httpError(404, 'catalogue_record_not_found', 'Consumable catalogue record not found');
+      if (current.version !== requestedVersion) { const conflict = httpError(409, 'version_conflict', 'The catalogue record changed since it was loaded'); conflict.serverVersion = current.version; throw conflict; }
+      const [{ count }] = await trx('consumable_requirements').where({ catalogue_id: current.id }).count({ count: '*' });
+      if (Number(count)) throw httpError(409, 'catalogue_record_in_use', 'Deactivate catalogue records that are referenced by packages');
+      await trx('consumable_catalogue').where({ id: current.id }).delete();
+      await audit.record(trx, req.user.id, 'consumable.delete', 'consumable', req.params.publicId);
+    });
+    res.status(204).end();
   } catch (error) { next(error); }
 });
 

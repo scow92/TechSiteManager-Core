@@ -12,7 +12,10 @@
 
   function replaceAll(value, remaps) {
     let result = value;
-    for (const remap of remaps) result = result.split(remap.temporaryId).join(remap.publicId);
+    for (const remap of remaps) {
+      result = result.split(remap.temporaryId).join(remap.publicId);
+      result = result.split(encodeURIComponent(remap.temporaryId)).join(encodeURIComponent(remap.publicId));
+    }
     return result;
   }
 
