@@ -25,7 +25,7 @@ test('fresh generic baseline installs with integrity and no legacy migration his
   assert.equal((await db.raw('PRAGMA integrity_check'))[0].integrity_check, 'ok');
   assert.deepEqual(await db.raw('PRAGMA foreign_key_check'), []);
   const migrations = await db('knex_migrations').select('name');
-  assert.deepEqual(migrations.map((row) => row.name), ['0001_generic_baseline.js', '0002_plugin_api_v2_extensions.js', '0003_phase2_infrastructure.js', '0004_phase3_work_packages.js']);
+  assert.deepEqual(migrations.map((row) => row.name), ['0001_generic_baseline.js', '0002_plugin_api_v2_extensions.js', '0003_phase2_infrastructure.js', '0004_phase3_work_packages.js', '0005_phase4_cable_schedules.js']);
   const tables = (await db.raw("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).map((row) => row.name);
   for (const expected of ['sites', 'rooms', 'racks', 'termination_points', 'termination_positions', 'devices', 'distance_samples', 'photos', 'work_packages', 'work_items', 'work_package_saves', 'circuits', 'segments', 'extension_values', 'import_sources', 'import_runs', 'import_entity_links', 'import_field_ownership', 'import_drafts']) assert.ok(tables.includes(expected));
 });
@@ -53,7 +53,8 @@ test('SQLite-safe backup and restore preserve generic records and provenance', a
   const [firstDeviceId] = await db('devices').insert({ public_id: firstDevicePublicId, site_id: site.id, room_id: roomId, rack_id: rackId, hostname: 'recovery-device-a', device_key: crypto.randomUUID(), rack_unit: 10, side: 'front' });
   const [secondDeviceId] = await db('devices').insert({ public_id: secondDevicePublicId, site_id: site.id, room_id: roomId, rack_id: rackId, hostname: 'recovery-device-b', device_key: crypto.randomUUID(), rack_unit: 20, side: 'front' });
   const [pointId] = await db('termination_points').insert({ public_id: crypto.randomUUID(), site_id: site.id, room_id: roomId, label: 'REC-ODF-01', kind: 'odf', tray_count: 2, positions_per_tray: 12 });
-  await db('termination_positions').insert({ public_id: crypto.randomUUID(), termination_point_id: pointId, tray: 2, position: 4, label: 'Fictional fibre 4' });
+  const positionPublicId = crypto.randomUUID();
+  const [positionId] = await db('termination_positions').insert({ public_id: positionPublicId, termination_point_id: pointId, tray: 2, position: 4, label: 'Fictional fibre 4' });
   await db('distance_samples').insert({ public_id: crypto.randomUUID(), site_id: site.id, endpoint_a: 'recovery-device-a', endpoint_b: 'recovery-device-b', endpoint_a_device_id: firstDeviceId, endpoint_b_device_id: secondDeviceId, endpoint_a_rack_id: rackId, endpoint_b_rack_id: rackId, media: 'fibre', length_metres: 14.5 });
   const photoBytes = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
   await db('photos').insert({ public_id: crypto.randomUUID(), entity_type: 'rack', entity_public_id: rackPublicId, name: 'Fictional recovery rack', media_type: 'image/jpeg', content: photoBytes, is_current: true });
@@ -61,6 +62,9 @@ test('SQLite-safe backup and restore preserve generic records and provenance', a
   const packagePublicId = crypto.randomUUID(); const workItemPublicId = crypto.randomUUID(); const packagePhotoPublicId = crypto.randomUUID(); const itemPhotoPublicId = crypto.randomUUID(); const saveId = crypto.randomUUID();
   const [packageId] = await db('work_packages').insert({ public_id: packagePublicId, site_id: site.id, package_ref: 'PKG-RECOVERY-1', external_reference: 'EXT-RECOVERY-1', project_reference: 'PROJECT-RECOVERY', title: 'Recovery fixture', status: 'active', lead_assignee: 'recovery-admin', assignees_json: '["recovery-admin"]' });
   const [workItemId] = await db('work_items').insert({ public_id: workItemPublicId, work_package_id: packageId, item_reference: 'ITEM-RECOVERY-1', title: 'Recovery handover item', status: 'active', lead_assignee: 'recovery-admin', assignees_json: '["recovery-admin"]' });
+  const [circuitId] = await db('circuits').insert({ public_id: crypto.randomUUID(), work_package_id: packageId, circuit_reference: 'FIBRE-RECOVERY-1', description: 'Typed recovery path', media: 'fibre', status: 'planned' });
+  const segmentPublicId = crypto.randomUUID();
+  await db('segments').insert({ public_id: segmentPublicId, circuit_id: circuitId, segment_reference: 'FIBRE-RECOVERY-1-A', sequence: 0, from_endpoint: 'recovery-device-a:xe1', from_endpoint_mode: 'device', from_port: 'xe1', from_device_id: firstDeviceId, from_room_id: roomId, from_rack_id: rackId, to_endpoint: 'REC-ODF-01 · T2/P4', to_endpoint_mode: 'odf', to_termination_position_id: positionId, to_room_id: roomId, from_connector: 'lc', to_connector: 'lc', fibre_type: 'OS2', fibre_mode: 'singlemode', fibre_simplex: 1, stock_length_metres: 15, item_type: 'patch-lead' });
   await db('photos').insert([
     { public_id: packagePhotoPublicId, entity_type: 'work_package', entity_public_id: packagePublicId, name: 'Fictional package handover', description: 'Package recovery evidence', media_type: 'image/jpeg', content: photoBytes, is_current: true },
     { public_id: itemPhotoPublicId, entity_type: 'work_item', entity_public_id: workItemPublicId, name: 'Fictional item handover', description: 'Item recovery evidence', media_type: 'image/jpeg', content: photoBytes, is_current: true }
@@ -88,9 +92,28 @@ test('SQLite-safe backup and restore preserve generic records and provenance', a
     assert.equal((await restoredDb('import_entity_links').count({ count: '*' }).first()).count, 1);
     assert.equal((await restoredDb('termination_positions').where({ termination_point_id: pointId }).first()).label, 'Fictional fibre 4');
     assert.equal(Number((await restoredDb('distance_samples').where({ endpoint_a_device_id: firstDeviceId }).first()).length_metres), 14.5);
+    const restoredSegment = await restoredDb('segments').where({ public_id: segmentPublicId }).first(); assert.equal(restoredSegment.from_device_id, firstDeviceId); assert.equal(restoredSegment.to_termination_position_id, positionId); assert.equal(restoredSegment.fibre_simplex, 1); assert.equal(Number(restoredSegment.stock_length_metres), 15);
     assert.deepEqual((await restoredDb('photos').where({ entity_public_id: rackPublicId }).first()).content, photoBytes);
     assert.deepEqual(await restoredDb.raw('PRAGMA foreign_key_check'), []);
   } finally { await restoredDb.destroy(); }
+});
+
+test('phase 4 migration preserves legacy segments and survives isolated down/up', async () => {
+  const file = path.join(testRoot, 'phase4-upgrade', 'upgrade.db'); fs.mkdirSync(path.dirname(file), { recursive: true });
+  const upgradeDb = knex({ ...knexfile, connection: { filename: file } });
+  try {
+    for (const name of ['0001_generic_baseline.js', '0002_plugin_api_v2_extensions.js', '0003_phase2_infrastructure.js', '0004_phase3_work_packages.js']) await upgradeDb.migrate.up({ name });
+    const [siteId] = await upgradeDb('sites').insert({ public_id: crypto.randomUUID(), code: 'CABLE-UPGRADE-01', name: 'Fictional Cable Upgrade Site' });
+    const [packageId] = await upgradeDb('work_packages').insert({ public_id: crypto.randomUUID(), site_id: siteId, package_ref: 'PKG-CABLE-UPGRADE-1', title: 'Legacy cable package' });
+    const [circuitId] = await upgradeDb('circuits').insert({ public_id: crypto.randomUUID(), work_package_id: packageId, circuit_reference: 'LEGACY-CIRCUIT-1', media: 'fibre' });
+    const segmentPublicId = crypto.randomUUID(); await upgradeDb('segments').insert({ public_id: segmentPublicId, circuit_id: circuitId, segment_reference: 'LEGACY-SEGMENT-1', from_endpoint: 'legacy-a:1', to_endpoint: 'legacy-b:1' });
+    await upgradeDb.migrate.latest();
+    let segment = await upgradeDb('segments').where({ public_id: segmentPublicId }).first(); assert.equal(segment.from_endpoint_mode, 'legacy'); assert.equal(segment.to_endpoint_mode, 'legacy'); assert.equal(segment.fibre_type, 'OS2');
+    await assert.rejects(upgradeDb('segments').where({ public_id: segmentPublicId }).update({ from_endpoint_mode: 'device', from_port: '' }), /invalid cable schedule values/);
+    assert.deepEqual(await upgradeDb.raw('PRAGMA foreign_key_check'), []);
+    await upgradeDb.migrate.rollback(); segment = await upgradeDb('segments').where({ public_id: segmentPublicId }).first(); assert.equal(segment.from_endpoint, 'legacy-a:1'); assert.equal('from_endpoint_mode' in segment, false);
+    await upgradeDb.migrate.latest(); segment = await upgradeDb('segments').where({ public_id: segmentPublicId }).first(); assert.equal(segment.from_endpoint_mode, 'legacy'); assert.deepEqual(await upgradeDb.raw('PRAGMA foreign_key_check'), []);
+  } finally { await upgradeDb.destroy(); }
 });
 
 test('phase 3 migration preserves legacy completion and installs mutation locks', async () => {

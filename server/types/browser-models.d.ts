@@ -42,10 +42,28 @@ export interface PhotoRecord { readonly publicId: string; readonly name: string;
 export type ExtensionValues = Readonly<Record<string, { readonly value: unknown; readonly version: number }>>;
 export interface CompletionActor { readonly publicId: string; readonly displayName: string; }
 export interface WorkItem { publicId: string; itemReference: string; title: string; description: string; status: string; sequence: number; leadAssignee: string | null; assignees: string[]; completedAt: string | null; completedBy: CompletionActor | null; handoverPhotos: PhotoRecord[]; version: number; readonly extensions: ExtensionValues; }
-export interface Segment { publicId: string; segmentReference: string; sequence: number; fromEndpoint: string; toEndpoint: string; lengthMetres: number | null; notes: string; version: number; readonly extensions: ExtensionValues; }
+export type CableEndpointMode = 'legacy' | 'device' | 'odf';
+export interface Segment {
+  publicId: string; segmentReference: string; sequence: number;
+  fromEndpoint: string; fromEndpointMode: CableEndpointMode; fromDevicePublicId: string | null; fromTerminationPositionPublicId: string | null; fromTerminationPointPublicId: string | null; fromPort: string; fromRoomPublicId: string | null; fromRoomName: string | null; fromRackPublicId: string | null; fromRackLabel: string | null;
+  toEndpoint: string; toEndpointMode: CableEndpointMode; toDevicePublicId: string | null; toTerminationPositionPublicId: string | null; toTerminationPointPublicId: string | null; toPort: string; toRoomPublicId: string | null; toRoomName: string | null; toRackPublicId: string | null; toRackLabel: string | null;
+  fromConnector: string; toConnector: string; lengthMetres: number | null; notes: string;
+  fibreType: string; fibreMode: string; fibreSimplex: boolean; stockLengthMetres: number | null; itemType: string;
+  copperCategory: string; copperShielding: string; copperPinout: string;
+  dacConnector: string; dacMedia: string; dacDirection: string;
+  version: number; readonly extensions: ExtensionValues;
+}
 export interface Circuit { publicId: string; circuitReference: string; description: string; media: string; status: string; version: number; readonly extensions: ExtensionValues; segments: Segment[]; }
 export interface Requirement { publicId: string; cataloguePublicId: string | null; description: string; quantityRequired: number; unit: string | null; version: number; readonly extensions: ExtensionValues; }
-export interface WorkPackage { publicId: string; readonly site: { readonly publicId: string; readonly code: string; readonly name: string; }; packageReference: string; externalReference: string | null; projectReference: string | null; title: string; description: string; status: string; leadAssignee: string | null; assignees: string[]; completedAt: string | null; completedBy: CompletionActor | null; handoverPhotos: PhotoRecord[]; version: number; readonly extensions: ExtensionValues; workItems: WorkItem[]; circuits: Circuit[]; consumableRequirements: Requirement[]; }
+export interface NewScheduleRack { publicId: string; roomPublicId: string; label: string; suiteLine: string; suiteLineConfirmed: boolean; sizeUnits: number; }
+export interface ScheduleRackChange { devicePublicId: string; _baseDeviceVersion: number; targetRackPublicId?: string; newRack?: NewScheduleRack; }
+export interface WorkPackage { publicId: string; readonly site: { readonly publicId: string; readonly code: string; readonly name: string; }; packageReference: string; externalReference: string | null; projectReference: string | null; title: string; description: string; status: string; leadAssignee: string | null; assignees: string[]; completedAt: string | null; completedBy: CompletionActor | null; handoverPhotos: PhotoRecord[]; version: number; readonly extensions: ExtensionValues; workItems: WorkItem[]; circuits: Circuit[]; consumableRequirements: Requirement[]; scheduleRackChanges: ScheduleRackChange[]; }
+export interface CableReferenceData {
+  readonly rooms: readonly { readonly publicId: string; readonly name: string; readonly version: number }[];
+  readonly racks: readonly { readonly publicId: string; readonly roomPublicId: string | null; readonly label: string; readonly suiteLine: string; readonly suiteLineConfirmed: boolean; readonly sizeUnits: number; readonly version: number }[];
+  readonly devices: readonly { readonly publicId: string; readonly roomPublicId: string | null; readonly rackPublicId: string | null; readonly hostname: string; readonly label: string; readonly deviceKey: string; readonly version: number }[];
+  readonly terminationPoints: readonly { readonly publicId: string; readonly roomPublicId: string | null; readonly label: string; readonly kind: string; readonly version: number; readonly positions: readonly TerminationPosition[] }[];
+}
 export interface DescriptorField { readonly id: string; readonly label: string; readonly type: 'string' | 'multiline' | 'integer' | 'boolean' | 'enum' | 'core-entity-selector'; readonly required?: boolean; readonly maxLength?: number; readonly options?: readonly string[]; }
 export interface ProviderDescriptor { readonly id: string; readonly label: string; readonly input: { readonly type: 'file' | 'pasted-text' | 'external-reference'; readonly maxBytes: number; readonly mediaTypes: readonly string[]; readonly fields: readonly DescriptorField[]; }; }
 export interface ReconciliationField { readonly fieldPath: string; readonly currentValue: unknown; readonly sourceValue: unknown; readonly ownership: string; readonly conflict: boolean; readonly recommended: string; readonly changed: boolean; }

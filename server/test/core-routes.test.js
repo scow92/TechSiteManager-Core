@@ -43,6 +43,28 @@ async function request(url, options = {}, cookie = adminCookie) {
   return { response, data };
 }
 
+function segmentEditorPayload(segment) {
+  return {
+    publicId: segment.publicId, _baseVersion: segment.version, segmentReference: segment.segmentReference, sequence: segment.sequence,
+    fromEndpoint: segment.fromEndpoint, fromEndpointMode: segment.fromEndpointMode, fromDevicePublicId: segment.fromDevicePublicId, fromTerminationPositionPublicId: segment.fromTerminationPositionPublicId, fromPort: segment.fromPort,
+    toEndpoint: segment.toEndpoint, toEndpointMode: segment.toEndpointMode, toDevicePublicId: segment.toDevicePublicId, toTerminationPositionPublicId: segment.toTerminationPositionPublicId, toPort: segment.toPort,
+    fromConnector: segment.fromConnector, toConnector: segment.toConnector, lengthMetres: segment.lengthMetres, notes: segment.notes,
+    fibreType: segment.fibreType, fibreMode: segment.fibreMode, fibreSimplex: segment.fibreSimplex, stockLengthMetres: segment.stockLengthMetres, itemType: segment.itemType,
+    copperCategory: segment.copperCategory, copperShielding: segment.copperShielding, copperPinout: segment.copperPinout,
+    dacConnector: segment.dacConnector, dacMedia: segment.dacMedia, dacDirection: segment.dacDirection
+  };
+}
+
+function packageEditorPayload(pack, saveId = crypto.randomUUID()) {
+  return {
+    saveId, _baseVersion: pack.version, packageReference: pack.packageReference, externalReference: pack.externalReference, projectReference: pack.projectReference, title: pack.title, description: pack.description, status: pack.status, leadAssignee: pack.leadAssignee, assignees: pack.assignees,
+    workItems: pack.workItems.map((item) => ({ publicId: item.publicId, _baseVersion: item.version, itemReference: item.itemReference, title: item.title, description: item.description, status: item.status, sequence: item.sequence, leadAssignee: item.leadAssignee, assignees: item.assignees })),
+    circuits: pack.circuits.map((circuit) => ({ publicId: circuit.publicId, _baseVersion: circuit.version, circuitReference: circuit.circuitReference, description: circuit.description, media: circuit.media, status: circuit.status, segments: circuit.segments.map(segmentEditorPayload) })),
+    consumableRequirements: pack.consumableRequirements.map((entry) => ({ publicId: entry.publicId, _baseVersion: entry.version, cataloguePublicId: entry.cataloguePublicId, description: entry.description, quantityRequired: entry.quantityRequired, unit: entry.unit })),
+    scheduleRackChanges: []
+  };
+}
+
 test.before(async () => {
   await db.migrate.latest();
   server = app.listen(0, '127.0.0.1');
@@ -320,6 +342,65 @@ test('Phase 3 transactional editor atomically preserves stable nested identities
   const rejected = await request(`/api/work-packages/${loaded.publicId}/editor`, { method: 'PUT', body: invalid });
   assert.equal(rejected.response.status, 422); assert.equal((await request(`/api/work-packages/${loaded.publicId}`)).data.title, 'Transactional fictional package');
   workPackage = saved.data;
+});
+
+test('Phase 4 cable schedules validate typed endpoints, media behavior, ODF chains, rack corrections, roles, and conflicts transactionally', async () => {
+  const secondDevice = (await request(`/api/sites/${site.publicId}/devices`, { method: 'POST', body: { hostname: 'demo-switch-02', label: 'Demo Switch Two', rackPublicId: rack.publicId, rackUnit: 20, sizeUnits: 1, side: 'front' } })).data;
+  const firstPosition = (await request(`/api/sites/${site.publicId}/termination-points/${termination.publicId}/positions`, { method: 'POST', body: { tray: 1, position: 1, label: 'Fictional path one' } })).data;
+  const secondPosition = (await request(`/api/sites/${site.publicId}/termination-points/${termination.publicId}/positions`, { method: 'POST', body: { tray: 1, position: 2, label: 'Fictional path two' } })).data;
+  const references = await request(`/api/sites/${site.publicId}/cable-reference-data`);
+  assert.equal(references.response.status, 200); assert.ok(references.data.devices.some((entry) => entry.publicId === device.publicId)); assert.ok(references.data.terminationPoints[0].positions.length >= 2);
+
+  const directlyCreated = await request('/api/work-packages', { method: 'POST', body: { sitePublicId: site.publicId, packageReference: 'PKG-CABLE-DIRECT', title: 'Direct typed cable creation', status: 'active', workItems: [], consumableRequirements: [], circuits: [{ circuitReference: 'COPPER-DIRECT', media: 'copper', status: 'planned', segments: [{ segmentReference: 'COPPER-DIRECT-A', sequence: 0, fromEndpointMode: 'device', fromDevicePublicId: device.publicId, fromPort: 'eth10', toEndpointMode: 'device', toDevicePublicId: secondDevice.publicId, toPort: 'eth20', fromConnector: 'rj45', toConnector: 'rj45', copperCategory: 'cat6a', copperShielding: 'f-utp', copperPinout: 'straight', lengthMetres: 8 }] }] } });
+  assert.equal(directlyCreated.response.status, 201); assert.equal(directlyCreated.data.circuits[0].segments[0].fromDevicePublicId, device.publicId); assert.equal(directlyCreated.data.circuits[0].segments[0].copperShielding, 'f-utp');
+  let direct = await request(`/api/work-packages/${directlyCreated.data.publicId}/circuits`, { method: 'POST', body: { circuitReference: 'DAC-DIRECT', media: 'dac', status: 'planned' } });
+  const directCircuit = direct.data.circuits.find((entry) => entry.circuitReference === 'DAC-DIRECT');
+  direct = await request(`/api/work-packages/${directlyCreated.data.publicId}/circuits/${directCircuit.publicId}/segments`, { method: 'POST', body: { segmentReference: 'DAC-DIRECT-A', fromEndpointMode: 'device', fromDevicePublicId: device.publicId, fromPort: 'et-0/0/1', toEndpointMode: 'device', toDevicePublicId: secondDevice.publicId, toPort: 'p1', fromConnector: 'qsfp28', toConnector: 'qsfp28', dacConnector: 'qsfp28', dacMedia: 'passive', dacDirection: 'a-to-b', lengthMetres: 3 } });
+  assert.equal(direct.response.status, 201); const directSegment = direct.data.circuits.find((entry) => entry.publicId === directCircuit.publicId).segments[0];
+  const mediaChange = await request(`/api/work-packages/${directlyCreated.data.publicId}/circuits/${directCircuit.publicId}`, { method: 'PUT', body: { circuitReference: directCircuit.circuitReference, description: directCircuit.description, media: 'fibre', status: directCircuit.status, _baseVersion: directCircuit.version } });
+  assert.equal(mediaChange.response.status, 409); assert.equal(mediaChange.data.code, 'circuit_media_change_has_segments');
+  const directUpdate = segmentEditorPayload(directSegment); delete directUpdate.publicId; directUpdate.dacMedia = 'active';
+  direct = await request(`/api/work-packages/${directlyCreated.data.publicId}/circuits/${directCircuit.publicId}/segments/${directSegment.publicId}`, { method: 'PUT', body: directUpdate });
+  assert.equal(direct.response.status, 200); assert.equal(direct.data.circuits.find((entry) => entry.publicId === directCircuit.publicId).segments[0].dacMedia, 'active');
+
+  const loaded = (await request(`/api/work-packages/${workPackage.publicId}`)).data;
+  const body = packageEditorPayload(loaded);
+  const defaults = { lengthMetres: 24, notes: 'Fictional Phase 4 row', fibreType: 'OS2', fibreMode: 'singlemode', fibreSimplex: false, stockLengthMetres: 25, itemType: 'patch-lead', copperCategory: 'cat6a', copperShielding: 'u-ftp', copperPinout: 'straight', dacConnector: 'sfp28', dacMedia: 'passive', dacDirection: 'bidirectional' };
+  const endpoint = (mode, record, port = '') => mode === 'device'
+    ? { Endpoint: `${record.hostname}:${port}`, EndpointMode: 'device', DevicePublicId: record.publicId, TerminationPositionPublicId: null, Port: port }
+    : { Endpoint: `${termination.label} · T${record.tray}/P${record.position}`, EndpointMode: 'odf', DevicePublicId: null, TerminationPositionPublicId: record.publicId, Port: '' };
+  const segment = (reference, sequence, from, to, fields = {}) => ({ publicId: crypto.randomUUID(), _baseVersion: 0, segmentReference: reference, sequence, ...Object.fromEntries(Object.entries(endpoint(from[0], from[1], from[2])).map(([key, value]) => [`from${key}`, value])), ...Object.fromEntries(Object.entries(endpoint(to[0], to[1], to[2])).map(([key, value]) => [`to${key}`, value])), fromConnector: fields.fromConnector || 'lc', toConnector: fields.toConnector || 'lc', ...defaults, ...fields });
+  const fibreId = crypto.randomUUID(); const fibreFirst = segment('FIBRE-01-A', 0, ['device', device, 'xe-0/0/1'], ['odf', firstPosition], { fibreSimplex: true }); const fibreSecond = segment('FIBRE-01-B', 1, ['odf', firstPosition], ['device', secondDevice, 'xe-0/0/2']);
+  const copperId = crypto.randomUUID(); const copper = segment('COPPER-01-A', 0, ['device', device, 'eth1'], ['device', secondDevice, 'eth2'], { fromConnector: 'rj45', toConnector: 'rj45', copperCategory: 'cat6a', copperShielding: 's-ftp', copperPinout: 'crossover', stockLengthMetres: null });
+  const dacId = crypto.randomUUID(); const dac = segment('DAC-01-A', 0, ['device', device, 'port1'], ['device', secondDevice, 'port2'], { fromConnector: 'sfp28', toConnector: 'sfp28', dacConnector: 'sfp28', dacMedia: 'active', dacDirection: 'a-to-b', stockLengthMetres: null });
+  body.circuits.push(
+    { publicId: fibreId, _baseVersion: 0, circuitReference: 'FIBRE-01', description: 'Chained fictional fibre', media: 'fibre', status: 'planned', segments: [fibreFirst, fibreSecond] },
+    { publicId: copperId, _baseVersion: 0, circuitReference: 'COPPER-01', description: 'Fictional copper', media: 'copper', status: 'planned', segments: [copper] },
+    { publicId: dacId, _baseVersion: 0, circuitReference: 'DAC-01', description: 'Fictional DAC', media: 'dac', status: 'planned', segments: [dac] }
+  );
+  const newRackPublicId = crypto.randomUUID();
+  body.scheduleRackChanges = [{ devicePublicId: secondDevice.publicId, _baseDeviceVersion: secondDevice.version, newRack: { publicId: newRackPublicId, roomPublicId: room.publicId, label: 'RACK-SCHEDULE-01', suiteLine: 'S', suiteLineConfirmed: true, sizeUnits: 47 } }];
+  const saved = await request(`/api/work-packages/${loaded.publicId}/editor`, { method: 'PUT', body });
+  assert.equal(saved.response.status, 200);
+  const savedFibre = saved.data.circuits.find((entry) => entry.publicId === fibreId); const savedCopper = saved.data.circuits.find((entry) => entry.publicId === copperId); const savedDac = saved.data.circuits.find((entry) => entry.publicId === dacId);
+  assert.equal(savedFibre.segments[0].toTerminationPositionPublicId, firstPosition.publicId); assert.equal(savedFibre.segments[1].fromTerminationPositionPublicId, firstPosition.publicId); assert.equal(savedFibre.segments[0].fibreSimplex, true); assert.equal(Number(savedFibre.segments[0].stockLengthMetres), 25);
+  assert.equal(savedCopper.segments[0].copperShielding, 's-ftp'); assert.equal(savedCopper.segments[0].fromConnector, 'rj45');
+  assert.equal(savedDac.segments[0].dacMedia, 'active'); assert.equal(savedDac.segments[0].dacDirection, 'a-to-b');
+  assert.equal(savedDac.segments[0].toRackPublicId, newRackPublicId); assert.equal(savedDac.segments[0].toRackLabel, 'RACK-SCHEDULE-01');
+  assert.equal((await request(`/api/sites/${site.publicId}/devices`)).data.find((entry) => entry.publicId === secondDevice.publicId).rackPublicId, newRackPublicId);
+  assert.ok((await request('/api/audit')).data.some((entry) => entry.action === 'rack.create_from_schedule'));
+
+  const invalid = packageEditorPayload(saved.data); invalid.title = 'Rejected disconnected ODF chain'; invalid.circuits.find((entry) => entry.publicId === fibreId).segments[1].fromTerminationPositionPublicId = secondPosition.publicId; invalid.circuits.find((entry) => entry.publicId === fibreId).segments[1].fromEndpoint = `${termination.label} · T1/P2`;
+  const rejected = await request(`/api/work-packages/${loaded.publicId}/editor`, { method: 'PUT', body: invalid });
+  assert.equal(rejected.response.status, 422); assert.equal(rejected.data.code, 'odf_chain_disconnected'); assert.notEqual((await request(`/api/work-packages/${loaded.publicId}`)).data.title, invalid.title);
+  const stale = packageEditorPayload(saved.data); stale.saveId = crypto.randomUUID(); stale.description = 'Rejected stale cable edit';
+  const winner = packageEditorPayload(saved.data); winner.saveId = crypto.randomUUID(); winner.description = 'Winning cable edit'; const winning = await request(`/api/work-packages/${loaded.publicId}/editor`, { method: 'PUT', body: winner }); assert.equal(winning.response.status, 200);
+  assert.equal((await request(`/api/work-packages/${loaded.publicId}/editor`, { method: 'PUT', body: stale })).response.status, 409);
+  const viewerLogin = await request('/api/auth/login', { method: 'POST', body: { username: 'viewer', password: VIEWER_TEST_PASSWORD } }, null); const viewerCookie = viewerLogin.response.headers.get('set-cookie').split(';')[0];
+  assert.equal((await request(`/api/work-packages/${loaded.publicId}/editor`, { method: 'PUT', body: packageEditorPayload(winning.data) }, viewerCookie)).response.status, 403);
+  assert.equal((await request(`/api/sites/${site.publicId}/devices/${device.publicId}?baseVersion=${device.version}`, { method: 'DELETE' })).data.code, 'device_in_cable_schedule');
+  assert.equal((await request(`/api/sites/${site.publicId}/termination-points/${termination.publicId}/positions/${firstPosition.publicId}?baseVersion=${firstPosition.version}`, { method: 'DELETE' })).data.code, 'termination_position_in_cable_schedule');
+  workPackage = winning.data;
 });
 
 test('Phase 3 work-item completion, handover, package locks, reopening, and role rules are enforced', async () => {

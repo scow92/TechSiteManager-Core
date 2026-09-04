@@ -1,0 +1,84 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const net = require('node:net');
+const { spawn } = require('node:child_process');
+const { chromium } = require('playwright');
+
+const root = path.join(__dirname, '..', '..');
+const PASSWORD = ['fictional', 'cable', 'contract', 'credential'].join('-');
+let instance; let browser; let administrator; let engineer; let viewer; let packagePublicId; let sitePublicId; let roomPublicId;
+
+function availablePort() { return new Promise((resolve, reject) => { const server = net.createServer(); server.once('error', reject); server.listen(0, '127.0.0.1', () => { const address = server.address(); server.close(() => resolve(address.port)); }); }); }
+
+async function startServer() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tsm-cable-contract-')); const port = await availablePort();
+  const child = spawn(process.execPath, ['server/server.js'], { cwd: root, env: { ...process.env, NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(port), DATA_DIR: dataDir, DB_FILE: path.join(dataDir, 'contract.db'), PLUGIN_CONFIG_FILE: path.join(root, 'config', 'zero-plugins.json') }, stdio: ['ignore', 'pipe', 'pipe'] });
+  let diagnostics = ''; child.stdout.on('data', (chunk) => { diagnostics += chunk; }); child.stderr.on('data', (chunk) => { diagnostics += chunk; }); const base = `http://127.0.0.1:${port}`;
+  for (let attempt = 0; attempt < 100; attempt += 1) { if (child.exitCode !== null) throw new Error(`Server exited: ${diagnostics.slice(-700)}`); try { if ((await fetch(`${base}/api/health`)).ok) return { base, child, dataDir }; } catch { /* wait */ } await new Promise((resolve) => setTimeout(resolve, 100)); }
+  throw new Error(`Server was not ready: ${diagnostics.slice(-700)}`);
+}
+
+async function stopServer() { if (!instance) return; if (instance.child.exitCode === null) { instance.child.kill('SIGTERM'); await new Promise((resolve) => { instance.child.once('exit', resolve); setTimeout(resolve, 3000); }); } fs.rmSync(instance.dataDir, { recursive: true, force: true }); }
+async function login(username) { const context = await browser.newContext(); const page = await context.newPage(); page.setDefaultTimeout(8000); await page.goto(instance.base); await page.getByLabel('Username').fill(username); await page.getByLabel('Password').fill(PASSWORD); await page.getByRole('button', { name: 'Sign in' }).click(); await page.getByRole('heading', { name: 'Home', exact: true }).waitFor(); return { context, page }; }
+async function saved(page) { await page.waitForTimeout(700); await page.locator('.save-status[data-state="saved"]').waitFor(); }
+
+test.before(async () => {
+  instance = await startServer(); browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext(); const page = await context.newPage(); page.setDefaultTimeout(8000); await page.goto(instance.base);
+  await page.getByLabel('Username').fill('administrator'); await page.getByLabel('Password').fill(PASSWORD); await page.getByLabel('Display name').fill('Fictional Cable Administrator'); await page.getByRole('button', { name: 'Create account' }).click(); await page.getByRole('heading', { name: 'Home', exact: true }).waitFor();
+  for (const role of ['engineer', 'viewer']) assert.equal(await page.evaluate(async ({ role, password }) => (await fetch('/api/auth/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: role, password, displayName: `Fictional Cable ${role}`, role, active: true }) })).status, { role, password: PASSWORD }), 201);
+  const created = await page.evaluate(async () => {
+    const headers = { 'Content-Type': 'application/json' }; const post = async (url, body) => (await (await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })).json());
+    const site = await post('/api/sites', { code: 'CABLE-DEMO-01', name: 'Fictional Cable Lab' }); const room = await post(`/api/sites/${site.publicId}/rooms`, { name: 'Fictional Cable Suite' }); const rack = await post(`/api/sites/${site.publicId}/racks`, { label: 'CABLE-RACK-01', roomPublicId: room.publicId });
+    const first = await post(`/api/sites/${site.publicId}/devices`, { hostname: 'cable-device-a', rackPublicId: rack.publicId, rackUnit: 10, sizeUnits: 1, side: 'front' }); const second = await post(`/api/sites/${site.publicId}/devices`, { hostname: 'cable-device-b', rackPublicId: rack.publicId, rackUnit: 20, sizeUnits: 1, side: 'front' });
+    const point = await post(`/api/sites/${site.publicId}/termination-points`, { label: 'CABLE-ODF-01', kind: 'odf', roomPublicId: room.publicId, trayCount: 2, positionsPerTray: 12 }); await post(`/api/sites/${site.publicId}/termination-points/${point.publicId}/positions`, { tray: 1, position: 1, label: 'Fictional path' });
+    await post(`/api/sites/${site.publicId}/distances`, { endpointADevicePublicId: first.publicId, endpointBDevicePublicId: second.publicId, media: 'fibre', lengthMetres: 31.5 });
+    const pack = await post('/api/work-packages', { sitePublicId: site.publicId, packageReference: 'PKG-CABLE-04', title: 'Fictional cable schedule contract', status: 'active', workItems: [], circuits: [], consumableRequirements: [] });
+    return { packagePublicId: pack.publicId, sitePublicId: site.publicId, roomPublicId: room.publicId };
+  });
+  packagePublicId = created.packagePublicId; sitePublicId = created.sitePublicId; roomPublicId = created.roomPublicId;
+  administrator = { context, page }; engineer = await login('engineer'); viewer = await login('viewer');
+});
+
+test.after(async () => { await Promise.all([administrator, engineer, viewer].filter(Boolean).map(({ context }) => context.close())); if (browser) await browser.close(); await stopServer(); });
+
+test('shared fibre grid supports direct edit, fill, keyboard movement, ODF hops, distance reuse, atomic rack creation, reload, and conflict recovery', async () => {
+  const page = engineer.page; await page.goto(`${instance.base}/#package/${packagePublicId}/connections`); await page.getByRole('button', { name: 'Add Fibre row' }).click(); await page.waitForFunction(() => globalThis.document.querySelectorAll('.cable-grid tbody tr').length === 1); await page.getByRole('button', { name: 'Add Fibre row' }).click(); await page.waitForFunction(() => globalThis.document.querySelectorAll('.cable-grid tbody tr').length === 2);
+  let rows = page.locator('.cable-grid tbody tr'); assert.equal(await rows.count(), 2);
+  const first = rows.nth(0);
+  await first.getByLabel('Circuit reference').fill('FIBRE-CONTRACT-01'); await first.getByLabel('Segment reference').fill('FIBRE-CONTRACT-01-A'); await first.getByLabel('from port').fill('xe-0/0/1'); await first.getByLabel('to port').fill('xe-0/0/2'); await first.getByLabel('Length metres').fill('18.5');
+  await first.getByLabel('Fibre type').selectOption('OM4'); await page.waitForFunction(() => import('/js/work-package-store.js').then((store) => store.packageSaveState().pack.circuits[0].segments[0].fibreType === 'OM4')); await page.getByLabel('Fill field').selectOption('fibreType'); await page.getByRole('button', { name: 'Fill down from focused row' }).click(); await page.waitForFunction(() => [...globalThis.document.querySelectorAll('.cable-grid [aria-label="Fibre type"]')].every((control) => control.value === 'OM4')); rows = page.locator('.cable-grid tbody tr'); assert.equal(await rows.nth(1).getByLabel('Fibre type').inputValue(), 'OM4'); assert.equal(await rows.nth(1).getByLabel('Mode', { exact: true }).inputValue(), 'multimode');
+  await rows.nth(0).getByLabel('Segment reference').focus(); await page.keyboard.press('Enter'); assert.equal(await rows.nth(1).getByLabel('Segment reference').evaluate((node) => node === node.ownerDocument.activeElement), true);
+  const notes = rows.nth(1).getByLabel('Notes'); await notes.evaluate((node) => { globalThis.__cableLiveInput = node; }); await notes.fill('Live input remains attached through save'); await saved(page); assert.equal(await notes.evaluate((node) => node === globalThis.__cableLiveInput && node.isConnected && node === node.ownerDocument.activeElement), true);
+  await rows.nth(1).getByRole('button', { name: 'Add ODF hop' }).click(); await saved(page); rows = page.locator('.cable-grid tbody tr'); assert.equal(await rows.count(), 3);
+  await page.locator('.cable-grid button:enabled', { hasText: 'Suggest distance' }).click(); await saved(page);
+  const correction = rows.nth(0).locator('details.rack-correction').first(); await correction.locator('summary').click(); await correction.getByLabel('from correction room').selectOption(roomPublicId); await correction.getByLabel('from new rack label').fill('CABLE-RACK-SCHEDULE-02'); await correction.getByLabel('from new rack suite line').fill('S'); await correction.getByRole('button', { name: 'Create rack' }).click(); await saved(page);
+  const savedPack = await page.evaluate(async (publicId) => await (await fetch(`/api/work-packages/${publicId}`)).json(), packagePublicId); const fibre = savedPack.circuits.find((entry) => entry.circuitReference === 'FIBRE-CONTRACT-01'); assert.equal(fibre.segments.length, 2); assert.equal(fibre.segments[0].toTerminationPositionPublicId, fibre.segments[1].fromTerminationPositionPublicId); assert.equal(fibre.segments[0].fromRackLabel, 'CABLE-RACK-SCHEDULE-02');
+  await page.reload(); await page.getByLabel('Segment reference').first().waitFor(); assert.ok((await page.getByLabel('Segment reference').evaluateAll((controls) => controls.map((control) => control.value))).includes('FIBRE-CONTRACT-01-A'));
+  await administrator.page.evaluate(async (publicId) => { const pack = await (await fetch(`/api/work-packages/${publicId}`)).json(); await fetch(`/api/work-packages/${publicId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ _baseVersion: pack.version, packageReference: pack.packageReference, externalReference: pack.externalReference, projectReference: pack.projectReference, title: 'Concurrent cable title', description: pack.description, status: pack.status, leadAssignee: pack.leadAssignee, assignees: pack.assignees }) }); }, packagePublicId);
+  await page.locator('.cable-grid tbody tr').last().getByLabel('Notes').fill('Retained cable conflict draft'); await page.getByText('This package changed elsewhere.', { exact: true }).waitFor(); const rebased = await page.evaluate(async () => { try { const store = await import('/js/work-package-store.js'); await store.rebasePackageChanges(); return { ok: true }; } catch (error) { return { ok: false, message: error.message, code: error.code }; } }); assert.equal(rebased.ok, true, JSON.stringify(rebased)); await saved(page);
+});
+
+test('copper and DAC pages enforce media-specific fields, row deletion, direction, and durable offline replay', async () => {
+  const page = engineer.page; await page.locator('[data-package-view="copper"]').click(); await page.getByRole('button', { name: 'Add Copper row' }).click(); let row = page.locator('.cable-grid tbody tr').first(); await row.getByLabel('Circuit reference').fill('COPPER-CONTRACT-01'); await row.getByLabel('Category').selectOption('cat7'); await row.getByLabel('Shielding').selectOption('s-ftp'); await row.getByLabel('Pinout').selectOption('crossover'); await saved(page);
+  await page.locator('[data-package-view="dac"]').click(); await page.getByRole('button', { name: 'Add DAC row' }).click(); row = page.locator('.cable-grid tbody tr').first(); await row.getByLabel('Circuit reference').fill('DAC-CONTRACT-01'); await row.getByLabel('Connector').selectOption('qsfp28'); await row.getByLabel('Media').selectOption('active'); await row.getByLabel('Direction').selectOption('a-to-b'); await row.getByRole('button', { name: 'Reverse direction' }).click(); await saved(page);
+  let pack = await page.evaluate(async (publicId) => await (await fetch(`/api/work-packages/${publicId}`)).json(), packagePublicId); assert.equal(pack.circuits.find((entry) => entry.circuitReference === 'COPPER-CONTRACT-01').segments[0].copperPinout, 'crossover'); const dac = pack.circuits.find((entry) => entry.circuitReference === 'DAC-CONTRACT-01').segments[0]; assert.equal(dac.dacConnector, 'qsfp28'); assert.equal(dac.dacDirection, 'b-to-a'); assert.equal(dac.fromConnector, 'qsfp28');
+  await page.route('**/api/work-packages/*/editor', (route) => route.abort('internetdisconnected')); await row.getByLabel('Notes').fill('Fictional offline DAC draft'); await page.waitForFunction(() => globalThis.OfflineStore.all('operation-queue').then((entries) => entries.some((entry) => entry.operationKey?.startsWith('work-package:') && String(entry.body).includes('Fictional offline DAC draft')))); assert.equal(await page.evaluate((publicId) => globalThis.OfflineStore.get('dirty-work-packages', publicId).then((entry) => entry.snapshot.circuits.find((circuit) => circuit.media === 'dac').segments[0].notes), packagePublicId), 'Fictional offline DAC draft'); await page.reload(); await page.getByLabel('Notes').waitFor(); assert.equal(await page.evaluate(() => import('/js/work-package-store.js').then((store) => store.packageSaveState().pack.circuits.find((circuit) => circuit.media === 'dac').segments[0].notes)), 'Fictional offline DAC draft'); assert.equal(await page.getByLabel('Notes').inputValue(), 'Fictional offline DAC draft');
+  await page.unroute('**/api/work-packages/*/editor'); await page.evaluate(() => import('/js/work-package-store.js').then((store) => store.flushAll())); await saved(page); await page.waitForFunction(() => globalThis.OfflineStore.all('operation-queue').then((entries) => entries.length === 0)); pack = await page.evaluate(async (publicId) => await (await fetch(`/api/work-packages/${publicId}`)).json(), packagePublicId); assert.equal(pack.circuits.find((entry) => entry.circuitReference === 'DAC-CONTRACT-01').segments[0].notes, 'Fictional offline DAC draft');
+  await page.locator('[data-package-view="copper"]').click(); await page.locator('.cable-grid tbody tr').first().getByRole('button', { name: 'Delete row' }).click(); await saved(page); assert.equal(await page.locator('.cable-grid tbody tr').count(), 0);
+});
+
+test('viewer, completed, phone, tablet, theme, pointer, keyboard, and print schedule states remain usable', async () => {
+  const viewerPage = viewer.page; await viewerPage.goto(`${instance.base}/#package/${packagePublicId}/connections`); await viewerPage.getByText('Viewer access is read-only.', { exact: true }).waitFor(); assert.equal(await viewerPage.locator('.cable-schedule input:enabled, .cable-schedule select:enabled, .cable-schedule button:enabled').count(), 0);
+  const page = engineer.page; await page.setViewportSize({ width: 390, height: 844 }); await page.goto(`${instance.base}/#package/${packagePublicId}/connections`); await page.locator('.cable-grid tbody tr').first().waitFor(); assert.equal(await page.locator('.cable-grid tbody tr').first().evaluate((node) => globalThis.getComputedStyle(node).display), 'grid'); assert.equal(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= globalThis.document.documentElement.clientWidth), true);
+  await page.setViewportSize({ width: 820, height: 1024 }); await page.reload(); await page.locator('.cable-grid-wrap').waitFor(); assert.equal(await page.locator('.cable-grid-wrap').evaluate((node) => node.scrollWidth >= node.clientWidth), true);
+  await page.getByRole('button', { name: /Theme:/ }).click(); assert.equal(await page.evaluate(() => globalThis.document.documentElement.dataset.theme), 'light'); await page.emulateMedia({ media: 'print' }); assert.equal(await page.locator('.cable-toolbar').evaluate((node) => globalThis.getComputedStyle(node).display), 'none'); await page.emulateMedia({ media: 'screen' });
+  await administrator.page.goto(`${instance.base}/#package/${packagePublicId}/details`); await administrator.page.getByRole('button', { name: 'Complete and lock package' }).click(); await administrator.page.getByText(/Completed .* by Fictional Cable Administrator/).waitFor(); await page.goto(`${instance.base}/#package/${packagePublicId}/dac`); await page.getByText('This completed schedule is locked.', { exact: false }).waitFor(); assert.equal(await page.locator('.cable-schedule input:enabled, .cable-schedule select:enabled, .cable-schedule button:enabled').count(), 0);
+  await administrator.page.getByRole('button', { name: 'Reopen work package' }).click(); await administrator.page.getByRole('button', { name: 'Complete and lock package' }).waitFor();
+  assert.equal(await page.evaluate(async (siteId) => (await (await fetch(`/api/sites/${siteId}/racks`)).json()).some((entry) => entry.label === 'CABLE-RACK-SCHEDULE-02'), sitePublicId), true);
+});

@@ -77,13 +77,19 @@ async function seedSharedState(page) {
     const site = await request('/sites', { code: 'LAB-VISUAL-01', name: 'Fictional Visual Lab', description: 'Publication-safe synthetic infrastructure' });
     const room = await request(`/sites/${site.publicId}/rooms`, { name: 'Demonstration Room', description: 'Synthetic room used only by visual tests' });
     const rack = await request(`/sites/${site.publicId}/racks`, { label: 'RACK-A1', suiteLine: 'A', sizeUnits: 42, roomPublicId: room.publicId });
-    await request(`/sites/${site.publicId}/termination-points`, { label: 'ODF-DEMO-1', kind: 'odf', notes: 'Fictional termination', roomPublicId: room.publicId });
-    await request(`/sites/${site.publicId}/devices`, { hostname: 'demo-switch-01', label: 'Demo Switch', deviceKey: 'device-demo-01', rackPublicId: rack.publicId, rackUnit: 10, sizeUnits: 2, side: 'front' });
+    const point = await request(`/sites/${site.publicId}/termination-points`, { label: 'ODF-DEMO-1', kind: 'odf', notes: 'Fictional termination', roomPublicId: room.publicId });
+    const position = await request(`/sites/${site.publicId}/termination-points/${point.publicId}/positions`, { tray: 1, position: 1, label: 'Fictional visual path' });
+    const firstDevice = await request(`/sites/${site.publicId}/devices`, { hostname: 'demo-switch-01', label: 'Demo Switch', deviceKey: 'device-demo-01', rackPublicId: rack.publicId, rackUnit: 10, sizeUnits: 2, side: 'front' });
+    const secondDevice = await request(`/sites/${site.publicId}/devices`, { hostname: 'demo-server-01', label: 'Demo Server', deviceKey: 'device-demo-02', rackPublicId: rack.publicId, rackUnit: 20, sizeUnits: 2, side: 'front' });
     await request(`/sites/${site.publicId}/distances`, { endpointA: 'demo-switch-01:1', endpointB: 'ODF-DEMO-1:1', media: 'fibre', lengthMetres: 18.25 });
     const workPackage = await request('/work-packages', {
       sitePublicId: site.publicId, packageReference: 'PKG-VISUAL-001', externalReference: 'EXT-VISUAL-001', projectReference: 'PROJECT-LANTERN', title: 'Fictional rack connection', description: 'Synthetic work package for visual regression', status: 'active', leadAssignee: 'visual-admin-zero', assignees: ['visual-admin-zero'],
       workItems: [{ itemReference: 'ITEM-VISUAL-1', title: 'Install demonstration link', description: 'Synthetic child item', status: 'active' }],
-      circuits: [{ circuitReference: 'CIRCUIT-VISUAL-1', description: 'Fictional connection', media: 'fibre', status: 'planned', segments: [{ segmentReference: 'SEGMENT-VISUAL-1', fromEndpoint: 'demo-switch-01:1', toEndpoint: 'ODF-DEMO-1:1', lengthMetres: 18.25 }] }],
+      circuits: [
+        { circuitReference: 'FIBRE-VISUAL-1', description: 'Fictional optical connection', media: 'fibre', status: 'planned', segments: [{ segmentReference: 'FIBRE-VISUAL-1-A', sequence: 0, fromEndpointMode: 'device', fromDevicePublicId: firstDevice.publicId, fromPort: 'xe-0/0/1', toEndpointMode: 'odf', toTerminationPositionPublicId: position.publicId, fromConnector: 'lc', toConnector: 'lc', fibreType: 'OM4', fibreMode: 'multimode', stockLengthMetres: 20, itemType: 'patch-lead', lengthMetres: 18.25 }] },
+        { circuitReference: 'COPPER-VISUAL-1', description: 'Fictional copper connection', media: 'copper', status: 'planned', segments: [{ segmentReference: 'COPPER-VISUAL-1-A', sequence: 0, fromEndpointMode: 'device', fromDevicePublicId: firstDevice.publicId, fromPort: 'ge-0/0/1', toEndpointMode: 'device', toDevicePublicId: secondDevice.publicId, toPort: 'eth0', fromConnector: 'rj45', toConnector: 'rj45', copperCategory: 'cat6a', copperShielding: 'f-utp', copperPinout: 'straight', lengthMetres: 7.5 }] },
+        { circuitReference: 'DAC-VISUAL-1', description: 'Fictional direct attach connection', media: 'dac', status: 'planned', segments: [{ segmentReference: 'DAC-VISUAL-1-A', sequence: 0, fromEndpointMode: 'device', fromDevicePublicId: firstDevice.publicId, fromPort: 'et-0/0/1', toEndpointMode: 'device', toDevicePublicId: secondDevice.publicId, toPort: 'p1', fromConnector: 'qsfp28', toConnector: 'qsfp28', dacConnector: 'qsfp28', dacMedia: 'passive', dacDirection: 'a-to-b', lengthMetres: 3 }] }
+      ],
       consumableRequirements: [{ description: 'Fictional labels', quantityRequired: 4, unit: 'each' }]
     });
     const pixel = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), (character) => character.charCodeAt(0));
@@ -159,6 +165,8 @@ async function captureResponsiveMatrix(page, base, shared) {
       await capture(page, `home-${viewportName}-${theme}`);
       await route(page, `${base}/#package/${shared.packagePublicId}/details`, 'PKG-VISUAL-001', 'Work package details');
       await capture(page, `package-details-${viewportName}-${theme}`);
+      await route(page, `${base}/#package/${shared.packagePublicId}/connections`, 'PKG-VISUAL-001', 'Add Fibre row');
+      await capture(page, `package-fibre-${viewportName}-${theme}`);
     }
   }
 }
@@ -204,7 +212,9 @@ async function captureResponsiveMatrix(page, base, shared) {
         [`site/${shared.sitePublicId}/distances`, 'LAB-VISUAL-01 — Fictional Visual Lab', 'site-distances', 'Distance samples'],
         [`package/${shared.packagePublicId}/details`, 'PKG-VISUAL-001', 'package-details', 'Work package details'],
         [`package/${shared.packagePublicId}/work-items`, 'PKG-VISUAL-001', 'package-work-items', 'Add work item'],
-        [`package/${shared.packagePublicId}/connections`, 'PKG-VISUAL-001', 'package-connections', 'Add circuit'],
+        [`package/${shared.packagePublicId}/connections`, 'PKG-VISUAL-001', 'package-connections', 'Add Fibre row'],
+        [`package/${shared.packagePublicId}/copper`, 'PKG-VISUAL-001', 'package-copper', 'Add Copper row'],
+        [`package/${shared.packagePublicId}/dac`, 'PKG-VISUAL-001', 'package-dac', 'Add DAC row'],
         [`package/${shared.packagePublicId}/consumables`, 'PKG-VISUAL-001', 'package-consumables', 'Add consumable requirement'],
         [`package/${shared.packagePublicId}/handover`, 'PKG-VISUAL-001', 'package-handover', 'Package handover'],
         ['import', 'Import', 'import-no-provider', 'No import providers are installed.'],
@@ -226,6 +236,8 @@ async function captureResponsiveMatrix(page, base, shared) {
       }, shared.packagePublicId);
       await route(page, `${zero.base}/#package/${shared.packagePublicId}/details`, 'PKG-VISUAL-001', 'Reopen work package');
       await capture(page, 'package-completed-desktop-dark');
+      await route(page, `${zero.base}/#package/${shared.packagePublicId}/dac`, 'PKG-VISUAL-001', 'This completed schedule is locked. Reopen the package before editing.');
+      await capture(page, 'package-dac-completed-desktop-dark');
       await page.goto(`${zero.base}/api/work-packages/${shared.packagePublicId}/export?format=print`);
       await page.getByRole('heading', { name: 'PKG-VISUAL-001', exact: true }).waitFor();
       await page.emulateMedia({ media: 'print' });
@@ -241,10 +253,11 @@ async function captureResponsiveMatrix(page, base, shared) {
       await page.getByRole('button', { name: 'Show navigation' }).click();
       await capture(page, 'navigation-drawer-iphone-portrait-dark');
       await page.mouse.click(382, 430);
+      await route(page, `${zero.base}/#package/${shared.packagePublicId}/connections`, 'PKG-VISUAL-001', 'This completed schedule is locked. Reopen the package before editing.');
       await page.evaluate(() => navigator.serviceWorker.ready);
       await context.setOffline(true);
-      await page.locator('.connection-status.offline').waitFor();
-      await capture(page, 'offline-status-iphone-portrait-dark');
+      await page.locator('.mobile-status').filter({ hasText: 'Offline' }).waitFor();
+      await capture(page, 'package-fibre-offline-iphone-portrait-dark');
       await context.setOffline(false);
 
       await page.setViewportSize(viewports.desktop);

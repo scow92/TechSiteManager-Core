@@ -23,7 +23,7 @@ const CORE_BINDINGS = Object.freeze({
   'work-package': new Set(['packageReference', 'title', 'status', 'externalReference', 'projectReference', 'description', 'leadAssignee', 'assignees']),
   'work-item': new Set(['itemReference', 'title', 'status', 'description']),
   circuit: new Set(['circuitReference', 'description', 'media', 'status']),
-  segment: new Set(['segmentReference', 'fromEndpoint', 'toEndpoint', 'lengthMetres', 'notes']),
+  segment: new Set(['segmentReference', 'fromEndpoint', 'fromEndpointMode', 'fromPort', 'fromConnector', 'toEndpoint', 'toEndpointMode', 'toPort', 'toConnector', 'lengthMetres', 'notes', 'fibreType', 'fibreMode', 'fibreSimplex', 'stockLengthMetres', 'itemType', 'copperCategory', 'copperShielding', 'copperPinout', 'dacConnector', 'dacMedia', 'dacDirection']),
   'consumable-requirement': new Set(['description', 'quantityRequired', 'unit'])
 });
 const SECRET_KEY = /(secret|password|credential|token|api[-_]?key|private[-_]?key)/i;

@@ -82,12 +82,17 @@ function updateActiveNavigation(route) {
 
 /** @param {import('../../server/types/browser-models').PresentationProfile | null} presentation @param {string} packageId */
 function renderPackageNavigation(presentation, packageId) {
-  const views = presentation?.views || [
+  const defaultViews = [
     { id: 'details', label: 'Details', icon: '▤' },
     { id: 'work-items', label: 'Work items', icon: '▥' },
-    { id: 'connections', label: 'Circuits', icon: '◉' },
+    { id: 'connections', label: 'Fibre', icon: '◉' },
+    { id: 'copper', label: 'Copper', icon: '◉' },
+    { id: 'dac', label: 'DAC', icon: '◉' },
     { id: 'consumables', label: 'Consumables', icon: '▣' }
   ];
+  const profileViews = presentation?.views || defaultViews;
+  const mandatoryCableViews = defaultViews.filter((view) => ['connections', 'copper', 'dac'].includes(view.id) && !profileViews.some((candidate) => candidate.id === view.id));
+  const views = [...profileViews, ...mandatoryCableViews];
   const navigationViews = views.some((view) => view.id === 'handover') ? views : [...views, { id: 'handover', label: 'Handover', icon: '▧' }];
   packageContextLabel.textContent = presentation?.terms.singular || 'Work package';
   packageInitialView = views[0]?.id || 'details';

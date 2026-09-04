@@ -2,15 +2,14 @@ import { api } from '../api.js';
 import { app, el, errorMessage, field, multilineField, notify, pageHead, selectField } from '../dom.js';
 import { renderPresentation } from '../presentation.js';
 import { discardPackageChanges, flushAll, mergeLivePackage, mutatePackage, observePackage, openPackage, rebasePackageChanges } from '../work-package-store.js';
+import { cableScheduleView } from './cable-schedule.js';
 
 /** @typedef {import('../../../server/types/browser-models').User} User */
 /** @typedef {import('../../../server/types/browser-models').WorkPackage} WorkPackage */
 /** @typedef {import('../../../server/types/browser-models').WorkItem} WorkItem */
-/** @typedef {import('../../../server/types/browser-models').Circuit} Circuit */
 /** @typedef {import('../../../server/types/browser-models').PhotoRecord} PhotoRecord */
 /** @typedef {import('../../../server/types/browser-models').ExporterDescriptor} ExporterDescriptor */
 /** @typedef {import('../../../server/types/browser-models').PresentationProfile} PresentationProfile */
-/** @typedef {import('../../../server/types/browser-models').SiteRecord} SiteRecord */
 
 let stopObserving = () => {};
 
@@ -97,28 +96,6 @@ function workItemsView(pack, user, rerender) {
   return el('div', { class: 'stack' }, ...(add ? [el('div', { class: 'form-actions' }, add)] : []), tabs, ...(empty ? [empty] : panels));
 }
 
-/** @param {WorkPackage} pack @param {Circuit} circuit @param {boolean} editable @param {() => Promise<void>} rerender */
-function circuitEditor(pack, circuit, editable, rerender) {
-  const form = el('form', { class: 'stack child-editor' }, el('div', { class: 'form-grid' }, field('Circuit reference', 'circuitReference', 'text', true), field('Description', 'description'), field('Media', 'media', 'text', true), selectField('Status', 'status', ['planned', 'active', 'blocked', 'complete', 'cancelled'], circuit.status)));
-  setValues(form, circuit); autosave(form, editable, (values) => { circuit.circuitReference = String(values.circuitReference); circuit.description = String(values.description || ''); circuit.media = String(values.media); circuit.status = String(values.status); });
-  const rows = circuit.segments.map((segment) => {
-    const row = el('tr', {}, ...[['segmentReference', segment.segmentReference, 'text'], ['fromEndpoint', segment.fromEndpoint, 'text'], ['toEndpoint', segment.toEndpoint, 'text'], ['lengthMetres', segment.lengthMetres ?? '', 'number'], ['notes', segment.notes, 'text']].map(([name, value, type]) => el('td', {}, el('input', { name, value, type, disabled: editable ? null : '', 'aria-label': name }))));
-    for (const input of row.querySelectorAll('input')) input.addEventListener('input', async () => { await mutatePackage(() => { segment.segmentReference = /** @type {HTMLInputElement} */ (row.querySelector('[name="segmentReference"]')).value; segment.fromEndpoint = /** @type {HTMLInputElement} */ (row.querySelector('[name="fromEndpoint"]')).value; segment.toEndpoint = /** @type {HTMLInputElement} */ (row.querySelector('[name="toEndpoint"]')).value; const length = /** @type {HTMLInputElement} */ (row.querySelector('[name="lengthMetres"]')).value; segment.lengthMetres = length === '' ? null : Number(length); segment.notes = /** @type {HTMLInputElement} */ (row.querySelector('[name="notes"]')).value; }); });
-    if (editable) row.append(el('td', {}, el('button', { type: 'button', class: 'danger compact-button', onclick: async () => { await mutatePackage(() => circuit.segments.splice(circuit.segments.indexOf(segment), 1)); await rerender(); } }, 'Remove')));
-    return row;
-  });
-  const table = el('div', { class: 'table-wrap' }, el('table', {}, el('thead', {}, el('tr', {}, ...['Segment reference', 'From', 'To', 'Length (m)', 'Notes', ...(editable ? [''] : [])].map((heading) => el('th', {}, heading)))), el('tbody', {}, ...rows)));
-  const actions = editable ? el('div', { class: 'form-actions' }, el('button', { type: 'button', class: 'secondary', onclick: async () => { await mutatePackage(() => circuit.segments.push({ publicId: crypto.randomUUID(), segmentReference: `SEG-${circuit.segments.length + 1}`, sequence: circuit.segments.length, fromEndpoint: 'endpoint-a', toEndpoint: 'endpoint-b', lengthMetres: null, notes: '', version: 0, extensions: {} })); await rerender(); } }, 'Add segment'), el('button', { type: 'button', class: 'danger', onclick: async () => { await mutatePackage(() => pack.circuits.splice(pack.circuits.indexOf(circuit), 1)); await rerender(); } }, 'Remove circuit')) : null;
-  return detailSection(circuit.circuitReference, `${circuit.media} · ${circuit.status}`, form, table, ...(actions ? [actions] : []));
-}
-
-/** @param {WorkPackage} pack @param {User} user @param {() => Promise<void>} rerender */
-function connectionsView(pack, user, rerender) {
-  const editable = user.role !== 'viewer' && pack.status !== 'complete';
-  const add = editable ? el('button', { type: 'button', class: 'secondary', onclick: async () => { await mutatePackage(() => pack.circuits.push({ publicId: crypto.randomUUID(), circuitReference: `CIRCUIT-${pack.circuits.length + 1}`, description: '', media: 'fibre', status: 'planned', version: 0, extensions: {}, segments: [] })); await rerender(); } }, 'Add circuit') : null;
-  return el('div', { class: 'stack' }, ...(add ? [el('div', { class: 'form-actions' }, add)] : []), ...(pack.circuits.length ? pack.circuits.map((circuit) => circuitEditor(pack, circuit, editable, rerender)) : [el('div', { class: 'empty-state' }, el('h2', {}, 'No circuits recorded'), el('p', {}, 'Add a logical circuit and its nested physical segments.'))]));
-}
-
 /** @param {WorkPackage} pack @param {User} user @param {() => Promise<void>} rerender */
 function consumablesView(pack, user, rerender) {
   const editable = user.role !== 'viewer' && pack.status !== 'complete';
@@ -152,14 +129,15 @@ function handoverView(pack, user, rerender) { const editable = user.role !== 'vi
 
 /** @param {string} publicId @param {User} user @param {string} [section] */
 export async function packageView(publicId, user, section = 'details') {
-  const [pack, exporters, presentation] = await Promise.all([openPackage(publicId), /** @type {Promise<ExporterDescriptor[]>} */ (api('/plugin-exporters')), /** @type {Promise<PresentationProfile | null>} */ (api('/presentation-profiles/work-package'))]);
+  const pack = await openPackage(publicId);
+  const [exporters, presentation, cableReferences] = await Promise.all([/** @type {Promise<ExporterDescriptor[]>} */ (api('/plugin-exporters')), /** @type {Promise<PresentationProfile | null>} */ (api('/presentation-profiles/work-package')), /** @type {Promise<import('../../../server/types/browser-models').CableReferenceData>} */ (api(`/sites/${encodeURIComponent(pack.site.publicId)}/cable-reference-data`))]);
   const rerender = () => packageView(publicId, user, section);
-  const siteDevices = /** @type {SiteRecord[]} */ (await api(`/sites/${encodeURIComponent(pack.site.publicId)}/devices`));
   const selectedView = presentation?.views.find((view) => view.id === section);
-  const content = section === 'work-items' ? workItemsView(pack, user, rerender) : section === 'connections' ? connectionsView(pack, user, rerender) : section === 'consumables' ? consumablesView(pack, user, rerender) : section === 'handover' ? handoverView(pack, user, rerender) : selectedView ? renderPresentation(/** @type {PresentationProfile} */ (presentation), selectedView, pack, user, async () => { await refreshPhotos(pack); await rerender(); }) : detailsView(pack, user, rerender);
+  const scheduleMedia = section === 'connections' || section === 'fibre' ? 'fibre' : section === 'copper' ? 'copper' : section === 'dac' ? 'dac' : null;
+  const content = section === 'work-items' ? workItemsView(pack, user, rerender) : scheduleMedia ? cableScheduleView(pack, user, scheduleMedia, cableReferences, rerender) : section === 'consumables' ? consumablesView(pack, user, rerender) : section === 'handover' ? handoverView(pack, user, rerender) : selectedView ? renderPresentation(/** @type {PresentationProfile} */ (presentation), selectedView, pack, user, async () => { await refreshPhotos(pack); await rerender(); }) : detailsView(pack, user, rerender);
   const deviceListId = 'canonical-site-devices'; for (const control of content.querySelectorAll('input[name="fromEndpoint"], input[name="toEndpoint"]')) control.setAttribute('list', deviceListId);
-  content.append(el('datalist', { id: deviceListId }, ...siteDevices.map((device) => el('option', { value: device.hostname || '', label: device.rackPublicId ? `Rack device · ${device.label || device.hostname}` : `Site device · ${device.label || device.hostname}` }))));
-  const saveStatus = el('span', { class: 'save-status', role: 'status', 'aria-live': 'polite' }, 'All changes saved');
+  content.append(el('datalist', { id: deviceListId }, ...cableReferences.devices.map((device) => el('option', { value: device.hostname || '', label: device.rackPublicId ? `Rack device · ${device.label || device.hostname}` : `Site device · ${device.label || device.hostname}` }))));
+  const saveStatus = el('span', { class: 'save-status', role: 'status', 'aria-live': 'polite', 'data-state': 'saved' }, 'All changes saved');
   const conflict = el('aside', { class: 'notice notice-warn conflict-panel', hidden: '', role: 'alert' }, el('strong', {}, 'This package changed elsewhere.'), el('p', {}, 'Keep this draft and reapply it to the latest version, or discard the local draft.'), el('div', { class: 'form-actions' }, el('button', { type: 'button', onclick: async () => { try { await rebasePackageChanges(); conflict.hidden = true; notify('Draft reapplied'); await rerender(); } catch (error) { notify(errorMessage(error)); } } }, 'Reapply draft'), el('button', { type: 'button', class: 'secondary', onclick: async () => { try { await discardPackageChanges(); conflict.hidden = true; notify('Local draft discarded'); await rerender(); } catch (error) { notify(errorMessage(error)); } } }, 'Discard draft')));
   stopObserving(); stopObserving = observePackage((status) => { const labels = /** @type {Record<string, string>} */ ({ changed: 'Unsaved changes', saving: 'Saving…', queued: 'Saved on this device · waiting for connection', saved: 'All changes saved', conflict: 'Save conflict', error: 'Save failed · draft retained' }); saveStatus.textContent = labels[status] || status; saveStatus.dataset.state = status; if (status === 'conflict') conflict.hidden = false; });
   const exports = [el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(pack.publicId)}/export?format=json` }, 'JSON'), el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(pack.publicId)}/export?format=csv` }, 'CSV'), el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(pack.publicId)}/export?format=print`, target: '_blank', rel: 'noopener' }, 'Print / PDF'), ...exporters.map((exporter) => el('a', { class: 'button secondary', href: `/api/work-packages/${encodeURIComponent(pack.publicId)}/plugin-exports/${encodeURIComponent(exporter.id)}` }, exporter.label))];
