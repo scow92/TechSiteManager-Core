@@ -95,10 +95,9 @@ it cannot supply missing executable behavior.
 
 ## Current next action
 
-Phases 1 through 5 and **PLUGIN-01** through **PLUGIN-02** are complete. The
-next item is **PLUGIN-03**. Differentially compare pasted-content parsing,
-security, normalization, preview and apply against the frozen behavior using
-approved private fixtures.
+Phases 1 through 5 and **PLUGIN-01** through **PLUGIN-03** are complete. The
+next item is **PLUGIN-04**. Verify failed, cancelled, malformed, stale,
+ambiguous and rejected imports are atomic and retain no raw source.
 
 ### Phase 1 — Establish the public-safe parity inventory
 
@@ -306,8 +305,15 @@ approved private fixtures.
   parsing, normalization, stable identity, atomic reconciliation/apply,
   reimport, manual-edit protection, absence, search and three export contracts.
   The exact packed-core integration and all public-core release checks pass.
-- [ ] **PLUGIN-03** Differentially compare pasted-content parsing, security,
+- [x] **PLUGIN-03** Differentially compare pasted-content parsing, security,
   normalization, preview and apply against the frozen behavior.
+  Evidence: the approved private evidence record compares generated HTML and
+  plain-text fixtures across bounded inert parsing, stable normalization,
+  security, reconciliation preview and reviewed apply. Six focused cases and
+  the exact packed-core integration pass script non-execution, no external
+  fetch/render/retention, malformed and limit errors, stable identities,
+  target/update/create preview, append, idempotent reimport and non-destructive
+  revised-source absence decisions. No core change or migration was required.
 - [ ] **PLUGIN-04** Verify failed, cancelled, malformed, stale, ambiguous and
   rejected imports create no blank or partial records and retain no raw source.
 - [ ] **PLUGIN-05** Verify installed plugins do not change any core workflow,
@@ -435,3 +441,4 @@ Next unchecked item:
 | 2026-09-04 | Phase 5 (`CORE-CONS-01`–`CORE-OPS-01`) | `e7a9609` | 89 unit/route/recovery tests, the Phase 5 browser journey plus all 3 cable, 4 package and 7 site browser contracts, zero-plugin/plugin e2e, and the 65-capture visual matrix pass; disclosure/history, licence and 138-file package reviews pass; migration `0006` preserves earlier users and Phase 5 rows through upgrade/down/up and encrypted backup/restore; a real zero-plugin image passes non-root, read-only, no-capability health/startup | PLUGIN-01 |
 | 2026-09-04 | PLUGIN-01 | Private integration evidence record | The exact `v1.2.0-rc.1` core candidate and packed integrity are pinned with an exact private package version and supported range; disposable required-plugin and zero-plugin startup runs pass independently. Private package identifiers and hashes remain outside this public repository. Core behavior and migrations are unchanged. | PLUGIN-02 |
 | 2026-09-04 | PLUGIN-02 | `8c745e5`, `bb7e929`; private integration evidence record | A bounded read-only export projection closes the generic core contract gap; generated private fixtures match frozen Work Request parsing, normalization, identity, atomic reconciliation/apply, idempotent reimport, manual-edit protection, recoverable absence, search and source-shaped/legacy export behavior. The exact packed integration, 93 core tests, E2E/visual suites, disclosure/history scans, licence review and package review pass. No migration is required. | PLUGIN-03 |
+| 2026-09-04 | PLUGIN-03 | Private integration evidence record | Generated pasted HTML/text fixtures match the retained golden parsing, security, normalization, preview and apply behavior. Six focused cases and the exact packed-core gate pass inert parsing, bounded failures, stable identity, normalized preview actions, append, reimport, revised-source absences and raw-content non-retention. No core change or migration is required. | PLUGIN-04 |
