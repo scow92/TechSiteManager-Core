@@ -1,10 +1,9 @@
 # Deployment
 
 This document describes deployment mechanics, not production approval. The
-container and recovery workflow is partial (`W32`, `W33`, and `FLOW-13` in
-[`CORE_PARITY_INVENTORY.md`](CORE_PARITY_INVENTORY.md)); migration bridging,
-encrypted backup operations, backup-age monitoring, and complete operational
-acceptance remain outstanding.
+generic operational controls in `W33` are implemented, while the candidate
+database bridge in `W32`, formal approvals and the broader `FLOW-13` gate in
+[`CORE_PARITY_INVENTORY.md`](CORE_PARITY_INVENTORY.md) remain outstanding.
 
 The public image contains core only and defaults to zero plugins. Its runtime is
 a digest-pinned distroless Node image and runs as the non-root UID/GID 65532. It
@@ -21,7 +20,23 @@ Keep the root filesystem read-only, drop Linux capabilities, enable
 secrets at runtime; never bake them into images, examples, or plugin profiles.
 
 Process readiness is reported by `GET /api/health`. It indicates that the
-process and configured plugin registry started; it is not evidence of product
-parity, migration readiness, operational approval, or production readiness. A
-missing required plugin prevents startup. An optional plugin failure reports
-degraded health without exposing package paths or configuration values.
+process, database and configured plugin registry started; it is not evidence
+of product parity, migration readiness, operational approval or production
+readiness. A missing required plugin prevents startup. An optional plugin
+failure reports degraded health without exposing package paths or configuration
+values. `SIGTERM` and `SIGINT` stop new connections, drain idle connections and
+close remaining connections after `SHUTDOWN_TIMEOUT_MS` (10 seconds by
+default) before closing SQLite.
+
+Configure `BACKUP_STATUS_FILE` to the status manifest written by the scheduled
+encrypted backup job and set `MAX_BACKUP_AGE_HOURS` to the alert threshold (24
+hours by default). Health remains HTTP 200 when the database is usable but
+reports `status: "degraded"` and `backup.status: "stale"` or `"invalid"`;
+monitor those fields explicitly. A database check failure returns HTTP 503.
+Paths, keys and plugin configuration values are never included in the response.
+
+Set `VAPID_PUBLIC_KEY` only when the deployment has a separately managed push
+delivery service. Core stores user-owned browser subscriptions and removes
+them on disable and sign-out; it does not embed notification credentials or a
+delivery provider. See [`BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) for the
+encrypted backup, isolated restore and restore-based rollback procedure.

@@ -17,7 +17,7 @@ test('service worker shell exactly covers HTML static dependencies and excludes 
     .filter((file) => String(file).endsWith('.js') && !['idb.js', 'offline.js'].includes(String(file)))
     .map((file) => `/js/${String(file).replaceAll(path.sep, '/')}`);
   for (const url of moduleFiles) assert.match(worker, new RegExp(url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(worker, /techsitemanager-shell-v13/);
+  assert.match(worker, /techsitemanager-shell-v15/);
   assert.doesNotMatch(worker, /\/js\/app\.js/);
   assert.match(worker, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.doesNotMatch(worker, /\/api\/[A-Za-z]/);
@@ -46,11 +46,18 @@ test('service worker uses network-first shell reads and never handles cross-orig
 
 test('IndexedDB schema separates disposable caches from durable queues', () => {
   const source = fs.readFileSync(path.join(root, 'public', 'js', 'idb.js'), 'utf8');
-  for (const store of ['reference-cache', 'dirty-work-packages', 'operation-queue', 'dead-letters', 'pending-logout', 'id-remaps', 'operation-completions']) assert.match(source, new RegExp(store));
-  assert.match(source, /const VERSION = 3/);
+  for (const store of ['reference-cache', 'dirty-work-packages', 'operation-queue', 'dead-letters', 'pending-logout', 'id-remaps', 'operation-completions', 'navigation-state']) assert.match(source, new RegExp(store));
+  assert.match(source, /const VERSION = 4/);
   assert.match(source, /tx\.oncomplete/);
   assert.match(source, /retryDeadLetter/);
   assert.doesNotMatch(source, /localStorage/);
+});
+
+test('PWA state is user-scoped and notification payloads are bounded', () => {
+  const pwa = fs.readFileSync(path.join(root, 'public', 'js', 'pwa.js'), 'utf8');
+  const worker = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
+  assert.match(pwa, /userPublicId/); assert.match(pwa, /Notification\.requestPermission/); assert.match(pwa, /pushManager\.subscribe/); assert.match(pwa, /unsubscribe/);
+  assert.match(worker, /addEventListener\('push'/); assert.match(worker, /title\.length <= 120/); assert.match(worker, /body\.length <= 240/); assert.match(worker, /notificationclick/);
 });
 
 test('offline boot retries durable logout before restoring an authenticated view', () => {

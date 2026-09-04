@@ -8,6 +8,7 @@ import { settingsView } from './views/settings.js';
 import { sitesView, siteView } from './views/sites.js';
 import { packageView } from './views/work-package.js';
 import { flushAll } from './work-package-store.js';
+import { loadNavigationState, saveNavigationState, unsubscribeNotifications } from './pwa.js';
 
 /** @typedef {import('../../server/types/browser-models').User} User */
 /** @typedef {import('../../server/types/browser-models').Site} Site */
@@ -16,6 +17,11 @@ import { flushAll } from './work-package-store.js';
 let user = null;
 let packageInitialView = 'details';
 let renderedRoute = '';
+let stateUserId = '';
+/** @type {{userPublicId:string,route:string,scrollX:number,scrollY:number,updatedAt:number}|null} */
+let restoredScroll = null;
+/** @type {ReturnType<typeof setTimeout> | undefined} */
+let scrollTimer;
 
 /** @param {string} id @returns {HTMLElement} */
 function shellElement(id) {
@@ -88,11 +94,12 @@ function renderPackageNavigation(presentation, packageId) {
     { id: 'connections', label: 'Fibre', icon: '◉' },
     { id: 'copper', label: 'Copper', icon: '◉' },
     { id: 'dac', label: 'DAC', icon: '◉' },
-    { id: 'consumables', label: 'Consumables', icon: '▣' }
+    { id: 'consumables', label: 'Consumables', icon: '▣' },
+    { id: 'bom', label: 'Bill of materials', icon: '▦' }
   ];
   const profileViews = presentation?.views || defaultViews;
-  const mandatoryCableViews = defaultViews.filter((view) => ['connections', 'copper', 'dac'].includes(view.id) && !profileViews.some((candidate) => candidate.id === view.id));
-  const views = [...profileViews, ...mandatoryCableViews];
+  const mandatoryCoreViews = defaultViews.filter((view) => ['connections', 'copper', 'dac', 'consumables', 'bom'].includes(view.id) && !profileViews.some((candidate) => candidate.id === view.id));
+  const views = [...profileViews, ...mandatoryCoreViews];
   const navigationViews = views.some((view) => view.id === 'handover') ? views : [...views, { id: 'handover', label: 'Handover', icon: '▧' }];
   packageContextLabel.textContent = presentation?.terms.singular || 'Work package';
   packageInitialView = views[0]?.id || 'details';
@@ -131,12 +138,25 @@ async function updateContext(route) {
 /** @param {User} nextUser */
 async function authenticated(nextUser) {
   user = nextUser;
+  await restoreUserState(nextUser);
+  if (!location.hash) history.replaceState(null, '', '#home');
   document.body.classList.remove('auth-active');
   nav.hidden = false;
   await renderSafely();
 }
 
 function currentRoute() { return (location.hash || '#home').slice(1); }
+
+/** @param {User} nextUser */
+async function restoreUserState(nextUser) {
+  if (stateUserId === nextUser.publicId) return;
+  stateUserId = nextUser.publicId;
+  const state = await loadNavigationState(nextUser.publicId);
+  if (state) {
+    if (!location.hash) history.replaceState(null, '', `#${state.route}`);
+    if (currentRoute() === state.route) restoredScroll = state;
+  }
+}
 
 /** @param {string} route @param {unknown} error */
 function renderRouteFailure(route, error) {
@@ -151,6 +171,7 @@ function renderRouteFailure(route, error) {
 async function renderSafely() {
   const route = currentRoute();
   if (renderedRoute && route !== renderedRoute) {
+    if (user) await saveNavigationState(user.publicId, renderedRoute, scrollX, scrollY);
     try { await flushAll(); }
     catch (error) { history.replaceState(null, '', `#${renderedRoute}`); notify(`Navigation paused: ${errorMessage(error)}`); return; }
   }
@@ -160,6 +181,8 @@ async function renderSafely() {
     notify(errorMessage(error));
   }
   renderedRoute = currentRoute();
+  if (user) await saveNavigationState(user.publicId, renderedRoute, scrollX, scrollY);
+  if (restoredScroll?.route === renderedRoute) { const state = restoredScroll; restoredScroll = null; requestAnimationFrame(() => scrollTo(state.scrollX, state.scrollY)); }
 }
 
 async function render() {
@@ -172,6 +195,7 @@ async function render() {
     authView(status.setupNeeded, authenticated);
     return;
   }
+  await restoreUserState(user);
   document.body.classList.remove('auth-active');
   nav.hidden = false;
   context.hidden = false;
@@ -191,13 +215,16 @@ async function render() {
 const logout = document.getElementById('logout');
 if (!logout) throw new Error('Required shell element is missing: logout');
 logout.addEventListener('click', async () => {
+  if (user) await saveNavigationState(user.publicId, currentRoute(), scrollX, scrollY);
   try { await flushAll(); } catch (error) { notify(`Sign out paused: ${errorMessage(error)}`); return; }
   await OfflineStore.put('pending-logout', { pending: true, createdAt: Date.now() }, 'current');
   try {
+    await unsubscribeNotifications();
     await api('/auth/logout', { method: 'POST' });
     await OfflineStore.delete('pending-logout', 'current');
   } finally {
     user = null;
+    stateUserId = '';
     location.hash = '';
     authView(false, authenticated);
   }
@@ -211,6 +238,10 @@ packageContext.addEventListener('change', () => {
 });
 
 window.addEventListener('hashchange', () => { renderSafely(); });
+window.addEventListener('scroll', () => {
+  clearTimeout(scrollTimer);
+  scrollTimer = setTimeout(() => { if (user) saveNavigationState(user.publicId, currentRoute(), scrollX, scrollY).catch(() => undefined); }, 180);
+}, { passive: true });
 themeToggle.addEventListener('click', cycleTheme);
 navCollapse.addEventListener('click', () => setNavigationCollapsed(true));
 navExpand.addEventListener('click', () => setNavigationCollapsed(false));

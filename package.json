@@ -43,6 +43,7 @@
     "test:contract:site": "node --test server/test/site-workflow.contract.js",
     "test:contract:package": "node --test server/test/package-workflow.contract.js",
     "test:contract:cable": "node --test server/test/cable-schedule.contract.js",
+    "test:contract:phase5": "node server/test/phase5-workflow.contract.js",
     "test:visual": "node server/test/visual-parity.playwright.js",
     "test:recovery": "node --test server/test/recovery.test.js",
     "test:all": "npm run lint && npm run syntax && npm run typecheck && npm test && npm run test:e2e && npm run test:visual",

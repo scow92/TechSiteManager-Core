@@ -22,6 +22,9 @@ async function start() {
     closing = true;
     clearInterval(maintenance);
     server.close(async () => { await db.destroy(); process.exit(0); });
+    server.closeIdleConnections?.();
+    const forced = setTimeout(() => server.closeAllConnections?.(), config.shutdownTimeoutMs);
+    forced.unref();
   }
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);

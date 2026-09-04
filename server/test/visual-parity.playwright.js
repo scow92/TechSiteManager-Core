@@ -272,7 +272,7 @@ async function captureResponsiveMatrix(page, base, shared) {
       await capture(page, 'validation-error-desktop-dark');
       await page.getByLabel('Password').fill('fictional-visual-password-zero');
       await page.getByRole('button', { name: 'Sign in' }).click();
-      await page.getByRole('heading', { name: 'Home', exact: true }).waitFor();
+      await page.getByRole('heading', { name: 'PKG-VISUAL-001', exact: true }).waitFor();
 
       await captureResponsiveMatrix(page, zero.base, shared);
       await context.close();

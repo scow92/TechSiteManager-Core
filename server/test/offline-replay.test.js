@@ -49,7 +49,7 @@ test('offline response classification is conservative', () => {
 test('FIFO replay durably remaps a temporary identity for dependent operations', async () => {
   const temporaryId = 'urn:offline:fictional-site';
   const first = operation('a', { temporaryId });
-  const second = operation('b', { createdAt: 2, path: `/sites/${temporaryId}/racks`, body: JSON.stringify({ sitePublicId: temporaryId }), dependsOn: ['a'], requiredTemporaryIds: [temporaryId] });
+  const second = operation('b', { createdAt: 2, path: `/sites/${encodeURIComponent(temporaryId)}/racks`, body: JSON.stringify({ sitePublicId: temporaryId }), dependsOn: ['a'], requiredTemporaryIds: [temporaryId] });
   const store = memoryStore({ 'operation-queue': [second, first] }); const requests = [];
   const result = await replay(store, async (url, options) => {
     requests.push({ url, body: options.body });
@@ -62,6 +62,28 @@ test('FIFO replay durably remaps a temporary identity for dependent operations',
   ]);
   assert.equal((await store.all('operation-queue')).length, 0);
   assert.equal((await store.all('id-remaps'))[0].temporaryId, temporaryId);
+});
+
+test('catalogue identities embedded in dirty package snapshots remap without loss', async () => {
+  const temporaryId = 'urn:offline:fictional-consumable';
+  const catalogue = operation('catalogue-create', { path: '/catalogue/consumables', method: 'POST', body: JSON.stringify({ catalogueReference: 'CONS-OFFLINE-FICTIONAL' }), temporaryId });
+  const packageSave = operation('package-save', {
+    createdAt: 2,
+    path: '/work-packages/22222222-2222-4222-8222-222222222222/editor',
+    method: 'PUT',
+    body: JSON.stringify({ consumableRequirements: [{ cataloguePublicId: temporaryId, quantityRequired: 6 }] }),
+    dependsOn: ['catalogue-create'],
+    requiredTemporaryIds: [temporaryId],
+    dirtyPackagePublicId: '22222222-2222-4222-8222-222222222222'
+  });
+  const store = memoryStore({ 'operation-queue': [packageSave, catalogue] }); const requests = [];
+  const result = await replay(store, async (url, options) => {
+    requests.push({ url, body: options.body });
+    return requests.length === 1 ? response(201, { publicId: '33333333-3333-4333-8333-333333333333' }) : response(200, { publicId: packageSave.dirtyPackagePublicId, version: 4 });
+  }, () => 15);
+  assert.equal(result.state, 'complete'); assert.equal(requests.length, 2);
+  assert.match(requests[1].body, /33333333-3333-4333-8333-333333333333/); assert.doesNotMatch(requests[1].body, /urn:offline:/);
+  assert.equal((await store.all('operation-queue')).length, 0); assert.equal((await store.all('dead-letters')).length, 0);
 });
 
 test('transient, network, and unclassified failures retain the operation and stop FIFO replay', async () => {
