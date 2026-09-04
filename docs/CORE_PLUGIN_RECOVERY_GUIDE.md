@@ -95,9 +95,9 @@ it cannot supply missing executable behavior.
 
 ## Current next action
 
-Phases 1 through 5 and **PLUGIN-01** through **PLUGIN-05** are complete. The
-next item is **PLUGIN-06**. Run the private supported-core matrix and record
-immutable package, profile, exporter and combined-image hashes.
+Phases 1 through 6 and **PLUGIN-01** through **PLUGIN-06** are complete. The
+next item is **MIGRATE-01**. Design the reviewed forward-only bridge and
+rehearse it only against restored copies.
 
 ### Phase 1 — Establish the public-safe parity inventory
 
@@ -332,8 +332,17 @@ immutable package, profile, exporter and combined-image hashes.
   matrix; and runs identical core-owned Sites browser and offline traces with
   the private package installed and after a zero-plugin restart. Only declared
   provider, presentation, exporter and health-count differences are accepted.
-- [ ] **PLUGIN-06** Run the private supported-core matrix and record immutable
+- [x] **PLUGIN-06** Run the private supported-core matrix and record immutable
   package, profile, exporter and combined-image hashes.
+  Evidence: `4a81d20` tags the accumulated hardened public core as
+  `v1.2.0-rc.2`. The approved private evidence record binds that exact commit
+  and packed integrity to the exact private package, two loaded import-profile
+  hashes, one loaded presentation-profile hash, three deterministic synthetic
+  exporter hashes and the unpublished combined OCI image manifest digest. The
+  complete packed-core matrix passes twice with identical hashes; the combined
+  image rebuild reproduces its digest and starts ready under the non-root,
+  read-only, no-capability runtime contract. No image was published and no
+  deployment configuration, private hash or internal endpoint was added here.
 
 ### Phase 7 — Migration and release acceptance
 
@@ -457,3 +466,4 @@ Next unchecked item:
 | 2026-09-04 | PLUGIN-03 | Private integration evidence record | Generated pasted HTML/text fixtures match the retained golden parsing, security, normalization, preview and apply behavior. Six focused cases and the exact packed-core gate pass inert parsing, bounded failures, stable identity, normalized preview actions, append, reimport, revised-source absences and raw-content non-retention. No core change or migration is required. | PLUGIN-04 |
 | 2026-09-04 | PLUGIN-04 | `05e8241`; private integration evidence record | Core now rejects conflicting source-link and package-reference targets before draft persistence. Ninety-four public tests plus the exact packed private gate verify complete-row atomicity for late failure, cancellation, malformed source, stale approval, ambiguity and rejected decisions, with sanitized responses and no raw source retention. E2E/visual, disclosure/history, licence and package reviews pass; no migration is required. | PLUGIN-05 |
 | 2026-09-04 | PLUGIN-05 | Private integration evidence record | The exact packed-core gate proves protected core files and route signatures are unchanged by installation, all four roles and security failures produce identical outcomes, and the same core-rendered online/offline Sites workflow has an identical semantic trace before a zero-plugin restart. Only bounded declared descriptors/results and health counts differ. No core change or migration is required. | PLUGIN-06 |
+| 2026-09-04 | PLUGIN-06 | `4a81d20`; private integration evidence record | The supported-core matrix binds the tagged `v1.2.0-rc.2` archive to an exact private package and records loader-produced profile hashes, deterministic synthetic exporter hashes and an unpublished combined-image digest. Two complete matrix runs reproduce every package/profile/exporter hash; two image builds reproduce the OCI digest and the non-root, read-only, capability-free smoke reports ready with all declared contributions. No private hash, deployment configuration, image or internal endpoint is published by core. | MIGRATE-01 |
