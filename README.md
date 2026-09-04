@@ -30,10 +30,10 @@ or product-parity claim.
 - **Implemented technical foundations:** generic persistence and APIs,
   authentication/authorization, import and plugin contracts, the responsive
   shell, selected offline primitives, and SQLite-safe backup/restore.
-- **Partial browser workflows:** the inventory records 16 partial workflows;
-  later cable, materials, users, PWA and operational paths remain incomplete.
-- **Verified detailed workflows:** 12 of 34 inventory rows now have end-to-end
-  implementation evidence. Six workflows are missing, no critical `FLOW-*`
+- **Partial browser workflows:** the inventory records 12 partial workflows;
+  later materials, users, PWA and operational paths remain incomplete.
+- **Verified detailed workflows:** 21 of 34 inventory rows now have end-to-end
+  implementation evidence. One workflow is missing, no critical `FLOW-*`
   acceptance item is checked, and screenshot regression is not interaction
   parity.
 - **Formal approval and production readiness:** not established. Required

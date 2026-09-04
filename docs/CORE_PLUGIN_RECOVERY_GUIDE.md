@@ -95,9 +95,9 @@ it cannot supply missing executable behavior.
 
 ## Current next action
 
-Phases 1 through 3 are complete. The next item is **CORE-CABLE-01**. Implement
-the full editable grid renderer shared by fibre, copper and DAC pages rather
-than extending the generic circuit cards.
+Phases 1 through 4 are complete. The next item is **CORE-CONS-01**. Implement
+shared consumables catalogue administration and keep catalogue definitions
+separate from per-package required quantities.
 
 ### Phase 1 — Establish the public-safe parity inventory
 
@@ -216,21 +216,40 @@ than extending the generic circuit cards.
 
 ### Phase 4 — Restore usable cable schedules
 
-- [ ] **CORE-CABLE-01** Implement the full editable grid renderer shared by
+- [x] **CORE-CABLE-01** Implement the full editable grid renderer shared by
   fibre, copper and DAC pages rather than generic circuit/segment cards.
-- [ ] **CORE-CABLE-02** Restore row creation, deletion, field helpers, fill
+  Evidence: `f65947c` adds the core-owned native-module schedule grid and
+  mandatory zero-plugin Fibre, Copper and DAC package sections; T15 passes.
+- [x] **CORE-CABLE-02** Restore row creation, deletion, field helpers, fill
   behavior, direct editing, debounced save, errors, conflict handling and
   reload without detaching live inputs.
-- [ ] **CORE-CABLE-03** Implement device and ODF endpoint modes, correct port
+  Evidence: `f65947c` connects row operations to the transactional durable
+  package graph, preserves live identities, and passes T14/T15 reload, replay,
+  keyboard, fill-down, debounce and stale-conflict cases.
+- [x] **CORE-CABLE-03** Implement device and ODF endpoint modes, correct port
   controls, chained ODF hops and relationship validation.
-- [ ] **CORE-CABLE-04** Implement endpoint room/rack autofill, transactional
+  Evidence: `f65947c` adds typed device/ODF identities and ports, site-scoped
+  validation and adjacent-hop continuity in UI, API and SQLite; T2/T11/T15 pass.
+- [x] **CORE-CABLE-04** Implement endpoint room/rack autofill, transactional
   rack creation, committed rack corrections and canonical-reference updates.
-- [ ] **CORE-FIBRE-01** Restore fibre-specific connector, type, mode, simplex,
+  Evidence: `f65947c` derives canonical locations, applies existing/new rack
+  corrections in the package transaction, refreshes references, reuses distance
+  suggestions and passes rollback, conflict, audit and browser cases in T2/T15.
+- [x] **CORE-FIBRE-01** Restore fibre-specific connector, type, mode, simplex,
   stock-length and item-type behavior.
-- [ ] **CORE-COPPER-01** Restore copper-specific fields and row behavior.
-- [ ] **CORE-DAC-01** Restore DAC-specific fields, direction and media behavior.
-- [ ] **CORE-CABLE-05** Verify desktop, iPad, phone, keyboard, pointer, light,
+  Evidence: `f65947c` persists and validates fibre fields, supplies stock and
+  ODF helpers, exports them generically and passes API/browser/recovery evidence.
+- [x] **CORE-COPPER-01** Restore copper-specific fields and row behavior.
+  Evidence: `f65947c` adds category, shielding and pinout controls and validation
+  with transactional persistence, offline replay and T2/T15 coverage.
+- [x] **CORE-DAC-01** Restore DAC-specific fields, direction and media behavior.
+  Evidence: `f65947c` adds bounded connector/media/direction fields and reverse
+  behavior with matching-connector validation and T2/T15 coverage.
+- [x] **CORE-CABLE-05** Verify desktop, iPad, phone, keyboard, pointer, light,
   dark, print, viewer, completed and offline states for all three schedules.
+  Evidence: `f65947c` adds three T15 interaction/state journeys and expands T12
+  to a 61-capture cable matrix; both pass with manual desktop, phone and print
+  review, and the complete release verification passes.
 
 ### Phase 5 — Restore materials, catalogue and operational workflows
 
@@ -381,3 +400,4 @@ Next unchecked item:
 | 2026-08-31 | CORE-SITE-01 | `f8b7ca0` | Five-case site contract passes edit persistence, viewer state, online conflicts, durable/coalesced replay and offline conflict review; full unit, e2e, visual, disclosure, history, licence and package checks pass; IndexedDB advances to v3 with no server migration | CORE-RACK-01 |
 | 2026-08-31 | Phase 2 (`CORE-RACK-01`–`CORE-DIST-01`) | `d590638`, `3cb4162` | 72 unit/route/recovery tests and all 7 site browser contracts pass; zero-plugin/plugin e2e and refreshed visual comparisons pass; disclosure/history, licence and package reviews pass; migration `0003` preserves constraints and survives down/up, backup/restore, non-root read-only image smoke and restored-database startup | CORE-PACK-01 |
 | 2026-08-31 | Phase 3 (`CORE-PACK-01`–`CORE-EXPORT-01`) | `e96ce08` | 76 unit/route/recovery tests, all 4 package and 7 site browser contracts, zero-plugin/plugin e2e, and the expanded handover/completed/print visual matrix pass; disclosure/history, licence and 127-file package reviews pass; migration `0004` preserves pre-Phase-3 package/child rows and completion state through upgrade/down/up and backup/restore; the restored database starts under the non-root read-only/no-capability container | CORE-CABLE-01 |
+| 2026-09-04 | Phase 4 (`CORE-CABLE-01`–`CORE-CABLE-05`) | `f65947c` | 78 unit/route/recovery tests, all 3 cable, 4 package and 7 site browser contracts, zero-plugin/plugin e2e, and the 61-capture visual matrix pass; disclosure/history, licence and 131-file package reviews pass; migration `0005` preserves legacy and typed schedule rows through upgrade/down/up and backup/restore; the restored database starts under the non-root read-only/no-capability container | CORE-CONS-01 |
