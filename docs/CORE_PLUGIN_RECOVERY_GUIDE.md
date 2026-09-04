@@ -95,10 +95,9 @@ it cannot supply missing executable behavior.
 
 ## Current next action
 
-Phases 1 through 5 and **PLUGIN-01** through **PLUGIN-04** are complete. The
-next item is **PLUGIN-05**. Verify installed plugins do not change any core
-workflow, route, permission, offline behavior or rendered interaction except
-an explicitly accepted private contribution.
+Phases 1 through 5 and **PLUGIN-01** through **PLUGIN-05** are complete. The
+next item is **PLUGIN-06**. Run the private supported-core matrix and record
+immutable package, profile, exporter and combined-image hashes.
 
 ### Phase 1 — Establish the public-safe parity inventory
 
@@ -323,9 +322,16 @@ an explicitly accepted private contribution.
   gate compares complete pre/post row snapshots for core entities, provenance,
   ownership, extension values, drafts and audit, and confirms source bytes,
   raw-only markers and provider details are neither persisted nor disclosed.
-- [ ] **PLUGIN-05** Verify installed plugins do not change any core workflow,
+- [x] **PLUGIN-05** Verify installed plugins do not change any core workflow,
   route, permission, offline behavior or rendered interaction except an
   explicitly accepted private contribution.
+  Evidence: the approved private exact packed-core gate hashes all protected
+  core renderer, route, migration, type and offline files before and after
+  installation; compares the complete Express route signature; repeats the
+  anonymous, viewer, engineer, manager and administrator permission/security
+  matrix; and runs identical core-owned Sites browser and offline traces with
+  the private package installed and after a zero-plugin restart. Only declared
+  provider, presentation, exporter and health-count differences are accepted.
 - [ ] **PLUGIN-06** Run the private supported-core matrix and record immutable
   package, profile, exporter and combined-image hashes.
 
@@ -450,3 +456,4 @@ Next unchecked item:
 | 2026-09-04 | PLUGIN-02 | `8c745e5`, `bb7e929`; private integration evidence record | A bounded read-only export projection closes the generic core contract gap; generated private fixtures match frozen Work Request parsing, normalization, identity, atomic reconciliation/apply, idempotent reimport, manual-edit protection, recoverable absence, search and source-shaped/legacy export behavior. The exact packed integration, 93 core tests, E2E/visual suites, disclosure/history scans, licence review and package review pass. No migration is required. | PLUGIN-03 |
 | 2026-09-04 | PLUGIN-03 | Private integration evidence record | Generated pasted HTML/text fixtures match the retained golden parsing, security, normalization, preview and apply behavior. Six focused cases and the exact packed-core gate pass inert parsing, bounded failures, stable identity, normalized preview actions, append, reimport, revised-source absences and raw-content non-retention. No core change or migration is required. | PLUGIN-04 |
 | 2026-09-04 | PLUGIN-04 | `05e8241`; private integration evidence record | Core now rejects conflicting source-link and package-reference targets before draft persistence. Ninety-four public tests plus the exact packed private gate verify complete-row atomicity for late failure, cancellation, malformed source, stale approval, ambiguity and rejected decisions, with sanitized responses and no raw source retention. E2E/visual, disclosure/history, licence and package reviews pass; no migration is required. | PLUGIN-05 |
+| 2026-09-04 | PLUGIN-05 | Private integration evidence record | The exact packed-core gate proves protected core files and route signatures are unchanged by installation, all four roles and security failures produce identical outcomes, and the same core-rendered online/offline Sites workflow has an identical semantic trace before a zero-plugin restart. Only bounded declared descriptors/results and health counts differ. No core change or migration is required. | PLUGIN-06 |
