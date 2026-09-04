@@ -20,6 +20,11 @@ const { loadPlugins } = require('../plugins/loader');
 const root = path.join(__dirname, '..', '..');
 const registry = loadPlugins({ configFile: path.join(root, 'config', 'fictional-plugin.json'), searchRoot: root });
 const basePlan = JSON.parse(fs.readFileSync(path.join(root, 'examples', 'fictional-plugin', 'example-plan.json'), 'utf8'));
+const IMPORT_APPLY_TABLES = Object.freeze([
+  'sites', 'work_packages', 'work_items', 'circuits', 'segments', 'consumable_requirements',
+  'import_sources', 'import_runs', 'import_entity_links', 'import_field_ownership', 'extension_values', 'audit_events'
+]);
+const IMPORT_STORAGE_TABLES = Object.freeze([...IMPORT_APPLY_TABLES, 'import_drafts']);
 let actorId;
 
 test.before(async () => {
@@ -36,6 +41,16 @@ function approval(proposal, overrides = {}) {
   return { schemaVersion: 'techsitemanager.io/import-approval/v1', draftHash: proposal.draftHash, targetVersions: proposal.targetVersions, fieldDecisions: {}, absenceDecisions: {}, acknowledgeWarnings: [], ...overrides };
 }
 async function stage(plan) { return imports.stage(registry, 'example.fictional-facility.json', actorId, payload(plan)); }
+async function tableCounts(tables = IMPORT_STORAGE_TABLES) {
+  return Object.fromEntries(await Promise.all(tables.map(async (table) => {
+    const row = await db(table).count({ count: '*' }).first();
+    return [table, Number(row.count)];
+  })));
+}
+async function assertNoStoredMarker(marker) {
+  const rows = await Promise.all(['import_sources', 'import_runs', 'import_entity_links', 'import_field_ownership', 'import_drafts', 'audit_events'].map((table) => db(table).select('*')));
+  assert.equal(JSON.stringify(rows).includes(marker), false, 'raw-only source content must not be retained');
+}
 
 test('fictional import creates a complete generic package and provenance atomically', async () => {
   const proposal = await stage(basePlan);
@@ -133,44 +148,79 @@ test('source absence is recoverable and never deletes a core record', async () =
 });
 
 test('cancelled and expired drafts cannot apply', async () => {
-  const plan = clone(basePlan); plan.sourceId = 'cancel-source'; plan.package.id = 'cancel-package'; plan.package.reference = 'PKG-CANCEL';
+  const marker = 'RAW-ONLY-CANCEL-EXPIRE-MARKER';
+  const beforeCancel = await tableCounts(IMPORT_APPLY_TABLES);
+  const plan = clone(basePlan); plan.rawOnly = marker; plan.sourceId = 'cancel-source'; plan.package.id = 'cancel-package'; plan.package.reference = 'PKG-CANCEL';
   const cancelled = await stage(plan); await imports.cancelDraft(cancelled.draftId, actorId);
   await assert.rejects(imports.getDraft(cancelled.draftId, actorId), { status: 404 });
+  await assert.rejects(imports.apply(registry, cancelled.draftId, actorId, approval(cancelled)), { status: 404 });
+  assert.deepEqual(await tableCounts(IMPORT_APPLY_TABLES), beforeCancel);
   plan.sourceId = 'expired-source'; plan.package.id = 'expired-package'; plan.package.reference = 'PKG-EXPIRED';
   const expired = await stage(plan); await db('import_drafts').where({ id: expired.draftId }).update({ expires_at: '2000-01-01T00:00:00.000Z' });
+  const beforeExpiredApply = await tableCounts();
   await assert.rejects(imports.apply(registry, expired.draftId, actorId, approval(expired)), { status: 410 });
+  assert.deepEqual(await tableCounts(), beforeExpiredApply);
+  assert.equal(await db('work_packages').whereIn('package_ref', ['PKG-CANCEL', 'PKG-EXPIRED']).first(), undefined);
+  await assertNoStoredMarker(marker);
 });
 
 test('stale approval is rejected before writes', async () => {
-  const plan = clone(basePlan); plan.revision = '5'; plan.package.description = 'New candidate description';
+  const marker = 'RAW-ONLY-STALE-MARKER';
+  const plan = clone(basePlan); plan.rawOnly = marker; plan.revision = '5'; plan.package.description = 'New candidate description';
   const proposal = await stage(plan);
   const pack = await db('work_packages').where({ package_ref: 'PKG-DEMO-100' }).first();
   await db('work_packages').where({ id: pack.id }).increment('version', 1);
+  const beforeApply = await tableCounts();
   await assert.rejects(imports.apply(registry, proposal.draftId, actorId, approval(proposal)), { code: 'stale_approval' });
+  assert.deepEqual(await tableCounts(), beforeApply);
+  assert.equal((await db('import_drafts').where({ id: proposal.draftId }).first()).applied_run_id, null);
+  await assertNoStoredMarker(marker);
 });
 
 test('approval rejects unknown or malformed field, absence, and warning decisions', async () => {
-  const plan = clone(basePlan); plan.revision = 'approval-validation';
+  const marker = 'RAW-ONLY-REJECTED-MARKER';
+  const plan = clone(basePlan); plan.rawOnly = marker; plan.revision = 'approval-validation';
   const proposal = await stage(plan);
+  const beforeApply = await tableCounts();
   await assert.rejects(imports.apply(registry, proposal.draftId, actorId, approval(proposal, { fieldDecisions: { 'work_package:missing.title': 'accept-source' } })), { code: 'invalid_field_decision' });
   await assert.rejects(imports.apply(registry, proposal.draftId, actorId, approval(proposal, { absenceDecisions: { 'absent:missing': 'unlink-and-keep' } })), { code: 'invalid_absence_decision' });
   await assert.rejects(imports.apply(registry, proposal.draftId, actorId, approval(proposal, { acknowledgeWarnings: ['example.unknown-warning'] })), { code: 'unknown_warning_acknowledgement' });
   await assert.rejects(imports.apply(registry, proposal.draftId, actorId, approval(proposal, { fieldDecisions: [] })), { code: 'invalid_shape' });
+  assert.deepEqual(await tableCounts(), beforeApply);
   assert.equal((await db('import_drafts').where({ id: proposal.draftId }).first()).applied_run_id, null);
+  await assertNoStoredMarker(marker);
 });
 
 test('transaction failure leaves no partial package, source, run, or links', async () => {
-  const plan = clone(basePlan); plan.sourceId = 'rollback-source'; plan.package.id = 'rollback-package'; plan.package.reference = 'PKG-ROLLBACK';
+  const marker = 'RAW-ONLY-ROLLBACK-MARKER';
+  const plan = clone(basePlan); plan.rawOnly = marker; plan.sourceId = 'rollback-source'; plan.package.id = 'rollback-package'; plan.package.reference = 'PKG-ROLLBACK';
   plan.items = [
     { id: 'rollback-a', reference: 'ITEM-DUPLICATE', title: 'First fictional item' },
     { id: 'rollback-b', reference: 'ITEM-DUPLICATE', title: 'Second fictional item' }
   ];
   plan.connections = [];
   const proposal = await stage(plan);
+  const beforeApply = await tableCounts();
   await assert.rejects(imports.apply(registry, proposal.draftId, actorId, approval(proposal)));
+  assert.deepEqual(await tableCounts(), beforeApply);
   assert.equal(await db('work_packages').where({ package_ref: 'PKG-ROLLBACK' }).first(), undefined);
   assert.equal(await db('import_sources').where({ external_source_id: 'rollback-source' }).first(), undefined);
   assert.equal(await db('import_runs').where({ source_version: plan.revision, content_hash: imports.sha256(Buffer.from(JSON.stringify(plan))) }).first(), undefined);
+  await assertNoStoredMarker(marker);
+});
+
+test('ambiguous source and package-reference matches are rejected before draft persistence', async () => {
+  const second = clone(basePlan); second.sourceId = 'ambiguity-second-source'; second.package.id = 'ambiguity-second-package'; second.package.reference = 'PKG-AMBIGUITY-SECOND'; second.items = []; second.connections = [];
+  const secondProposal = await stage(second);
+  await imports.apply(registry, secondProposal.draftId, actorId, approval(secondProposal));
+
+  const marker = 'RAW-ONLY-AMBIGUOUS-MARKER';
+  const ambiguous = clone(basePlan); ambiguous.rawOnly = marker; ambiguous.revision = 'ambiguous-target'; ambiguous.package.reference = second.package.reference;
+  const beforeStage = await tableCounts();
+  await assert.rejects(stage(ambiguous), { status: 409, code: 'ambiguous_import_target' });
+  assert.deepEqual(await tableCounts(), beforeStage);
+  assert.equal((await db('work_packages').where({ package_ref: 'PKG-DEMO-100' }).first()).public_id, (await db('import_entity_links').where({ entity_type: 'work_package', source_record_key: `package:${basePlan.package.id}` }).first()).entity_public_id);
+  await assertNoStoredMarker(marker);
 });
 
 test('same source version with changed content produces a bounded warning', async () => {
@@ -182,6 +232,9 @@ test('same source version with changed content produces a bounded warning', asyn
 });
 
 test('provider timeout and failure responses are sanitized', async () => {
+  const beforeStage = await tableCounts();
+  const malformedMarker = 'RAW-MALFORMED-SOURCE-MARKER';
+  await assert.rejects(imports.stage(registry, 'example.fictional-facility.json', actorId, { content: `{\"rawOnly\":\"${malformedMarker}\"`, mediaType: 'text/plain', fields: {} }), { code: 'source_unrecognized' });
   const provider = { id: 'fixture.timeout.provider', providerVersion: '1.0.0', input: { type: 'pasted-text', maxBytes: 1024, fields: [] }, transform: () => new Promise(() => {}) };
   const timeoutRegistry = { provider: () => provider, profile: () => null, transform: () => null };
   await assert.rejects(imports.stage(timeoutRegistry, provider.id, actorId, { content: '{}', mediaType: 'text/plain', fields: {} }), { code: 'provider_timeout' });
@@ -189,6 +242,9 @@ test('provider timeout and failure responses are sanitized', async () => {
   const failedProvider = { ...provider, id: 'fixture.failure.provider', transform: async () => { throw new Error(marker); } };
   const failureRegistry = { provider: () => failedProvider, profile: () => null, transform: () => null };
   await assert.rejects(imports.stage(failureRegistry, failedProvider.id, actorId, { content: marker, mediaType: 'text/plain', fields: {} }), (error) => error.code === 'provider_rejected_source' && !error.message.includes(marker));
+  assert.deepEqual(await tableCounts(), beforeStage);
+  await assertNoStoredMarker(malformedMarker);
+  await assertNoStoredMarker(marker);
 });
 
 test('external-reference connectors receive strictly validated descriptor fields', async () => {
