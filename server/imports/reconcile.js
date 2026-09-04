@@ -1,5 +1,7 @@
 'use strict';
 
+const { httpError } = require('../lib/errors');
+
 /** @typedef {import('techsitemanager/import-contracts').FieldOwnershipPolicy} FieldOwnershipPolicy */
 /** @typedef {import('techsitemanager/import-contracts').ManagedValue} ManagedValue */
 /** @typedef {import('techsitemanager/import-contracts').ReconciliationEntityType} EntityType */
@@ -77,8 +79,12 @@ async function buildProposal(trx, source, draft) {
     const key = `${record.entityType}:${record.sourceRecordKey}`;
     const link = linkMap.get(key);
     let current = link ? await currentRow(trx, record.entityType, link.entity_public_id) : null;
-    if (!current && record.entityType === 'work_package' && record.fields.packageReference) {
-      current = /** @type {EntityRow | undefined} */ (await trx('work_packages').where({ package_ref: record.fields.packageReference.value }).first());
+    if (record.entityType === 'work_package' && record.fields.packageReference) {
+      const referenceMatch = /** @type {EntityRow | undefined} */ (await trx('work_packages').where({ package_ref: record.fields.packageReference.value }).first());
+      if (current && referenceMatch && current.public_id !== referenceMatch.public_id) {
+        throw httpError(409, 'ambiguous_import_target', 'Import source matches more than one work package');
+      }
+      if (!current) current = referenceMatch;
     }
     if (link) seenLinkIds.add(link.id);
     if (current && current.version !== undefined) targetVersions[current.public_id] = current.version;

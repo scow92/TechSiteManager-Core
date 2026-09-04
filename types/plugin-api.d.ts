@@ -327,6 +327,69 @@ export interface WorkPackageProjection {
   readonly consumableRequirements: readonly ExportConsumableRequirement[];
 }
 
+export interface ExportProjectionRoom {
+  readonly publicId: string;
+  readonly name: string;
+  readonly description: string;
+  readonly version: number;
+}
+
+export interface ExportProjectionRack {
+  readonly publicId: string;
+  readonly label: string;
+  readonly suiteLine: string;
+  readonly sizeUnits: number;
+  readonly roomPublicId: string | null;
+  readonly roomName: string | null;
+  readonly version: number;
+}
+
+export interface ExportProjectionTerminationPoint {
+  readonly publicId: string;
+  readonly label: string;
+  readonly kind: string;
+  readonly notes: string;
+  readonly roomPublicId: string | null;
+  readonly roomName: string | null;
+  readonly version: number;
+}
+
+export interface ExportProjectionCatalogueItem {
+  readonly publicId: string;
+  readonly catalogueReference: string;
+  readonly description: string;
+  readonly estimatedUnitPrice: number | null;
+  readonly unit: string;
+  readonly active: boolean;
+  readonly version: number;
+}
+
+export interface ApprovedImportRecordProjection {
+  readonly sourcePublicId: string;
+  readonly sourceRecordKey: string;
+  readonly entityType: 'work-package' | 'work-item' | 'circuit' | 'segment' | 'consumable-requirement';
+  readonly entityPublicId: string;
+  readonly parentEntityPublicId: string | null;
+  readonly state: 'present' | 'source-absent' | 'entity-missing';
+}
+
+export interface ExportProjectionV1 {
+  readonly schemaVersion: 'techsitemanager.io/export-projection/v1';
+  readonly workPackage: WorkPackageProjection;
+  readonly site: {
+    readonly publicId: string;
+    readonly code: string;
+    readonly name: string;
+    readonly description: string;
+    readonly version: number;
+    readonly rooms: readonly ExportProjectionRoom[];
+    readonly racks: readonly ExportProjectionRack[];
+    readonly terminationPoints: readonly ExportProjectionTerminationPoint[];
+  };
+  readonly catalogueItems: readonly ExportProjectionCatalogueItem[];
+  readonly approvedImportRecords: readonly ApprovedImportRecordProjection[];
+}
+
 export interface ExporterContext {
   readonly abortSignal: AbortSignal;
 }
@@ -341,11 +404,29 @@ export interface Exporter {
   readonly mediaType: string;
   readonly fileExtension: string;
   readonly maxBytes: number;
+  readonly projectionVersion?: undefined;
   export(
     workPackage: WorkPackageProjection,
     context: ExporterContext
   ): ExportResult | Promise<ExportResult>;
 }
+
+export type WorkPackageExporter = Exporter;
+
+export interface ExportProjectionV1Exporter {
+  readonly id: string;
+  readonly label: string;
+  readonly mediaType: string;
+  readonly fileExtension: string;
+  readonly maxBytes: number;
+  readonly projectionVersion: 'techsitemanager.io/export-projection/v1';
+  export(
+    projection: ExportProjectionV1,
+    context: ExporterContext
+  ): ExportResult | Promise<ExportResult>;
+}
+
+export type PluginExporter = WorkPackageExporter | ExportProjectionV1Exporter;
 
 export interface PluginPackage {
   readonly manifest: PluginManifest;
@@ -356,7 +437,7 @@ export interface PluginPackage {
   readonly profiles?: readonly YAMLProfileReference[];
   /** Plugin API V2 only. Data is loaded and strictly validated by core. */
   readonly presentations?: readonly PresentationProfileReference[];
-  readonly exporters?: readonly Exporter[];
+  readonly exporters?: readonly PluginExporter[];
 }
 
 export interface ProviderDescriptor {
@@ -381,9 +462,7 @@ export interface LoadedSourceConnector extends SourceConnector {
   readonly pluginId: string;
 }
 
-export interface LoadedExporter extends Exporter {
-  readonly pluginId: string;
-}
+export type LoadedExporter = PluginExporter & { readonly pluginId: string };
 
 export interface LoadedPlugin extends PluginManifest {
   readonly package: string;

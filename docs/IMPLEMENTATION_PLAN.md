@@ -73,6 +73,8 @@ acceptance gates are tracked in
   package projection, and transactional V2 import reconciliation.
 - [x] Preserve V1 package compatibility and require a V2-compatible core range
   for packages that contribute presentations.
+- [x] Add a bounded Plugin API V2 export projection for compatibility formats
+  without exposing persistence, provider logic or mutation capabilities.
 
 ## Offline and operations
 

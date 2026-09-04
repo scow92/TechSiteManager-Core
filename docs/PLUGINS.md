@@ -37,6 +37,12 @@ abort signal. They return one bounded `Buffer`; core chooses the response
 headers and safe filename. Exporters do not receive a response object, route,
 database handle, raw request, cookie, or session.
 
+Plugin API V2 exporters that need normalized relationships for compatibility
+formats may explicitly request the versioned, read-only export projection.
+That projection is namespace-filtered, deterministic and record-count bounded;
+it does not add a general query or mutation surface. See
+[EXPORT_PROJECTION_API.md](EXPORT_PROJECTION_API.md).
+
 Plugins are trusted in-process Node code, not sandboxes. The narrow function
 contract prevents accidental coupling but cannot stop a package from importing
 filesystem, network, process, or database modules. Review and pin plugins like
