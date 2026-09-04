@@ -95,9 +95,10 @@ it cannot supply missing executable behavior.
 
 ## Current next action
 
-Phases 1 through 5 are complete. The next item is **PLUGIN-01**. Pin an exact
-private plugin package version and supported core range, then verify zero-plugin
-and required-plugin startup independently without changing core behavior.
+Phases 1 through 5 and **PLUGIN-01** are complete. The next item is
+**PLUGIN-02**. Differentially compare Work Request parsing, normalization,
+identity, reconciliation, apply, search and export against the frozen behavior
+using approved private fixtures.
 
 ### Phase 1 — Establish the public-safe parity inventory
 
@@ -289,8 +290,13 @@ and required-plugin startup independently without changing core behavior.
 
 ### Phase 6 — Accept private providers without changing the product
 
-- [ ] **PLUGIN-01** Pin an exact private package version and supported core
+- [x] **PLUGIN-01** Pin an exact private package version and supported core
   range; verify zero-plugin and required-plugin startup independently.
+  Evidence: the approved private integration record pins the `v1.1.0-rc.1`
+  core candidate, its packed integrity and an exact private package version;
+  its disposable integration run verifies both independent startup modes
+  without changing public core behavior. Private package identifiers and
+  integrity records remain in the private integration and deployment scopes.
 - [ ] **PLUGIN-02** Differentially compare Work Request parsing, normalization,
   identity, reconciliation, apply, search and export against the frozen
   behavior using approved private fixtures.
@@ -421,3 +427,4 @@ Next unchecked item:
 | 2026-08-31 | Phase 3 (`CORE-PACK-01`–`CORE-EXPORT-01`) | `e96ce08` | 76 unit/route/recovery tests, all 4 package and 7 site browser contracts, zero-plugin/plugin e2e, and the expanded handover/completed/print visual matrix pass; disclosure/history, licence and 127-file package reviews pass; migration `0004` preserves pre-Phase-3 package/child rows and completion state through upgrade/down/up and backup/restore; the restored database starts under the non-root read-only/no-capability container | CORE-CABLE-01 |
 | 2026-09-04 | Phase 4 (`CORE-CABLE-01`–`CORE-CABLE-05`) | `f65947c` | 78 unit/route/recovery tests, all 3 cable, 4 package and 7 site browser contracts, zero-plugin/plugin e2e, and the 61-capture visual matrix pass; disclosure/history, licence and 131-file package reviews pass; migration `0005` preserves legacy and typed schedule rows through upgrade/down/up and backup/restore; the restored database starts under the non-root read-only/no-capability container | CORE-CONS-01 |
 | 2026-09-04 | Phase 5 (`CORE-CONS-01`–`CORE-OPS-01`) | `e7a9609` | 89 unit/route/recovery tests, the Phase 5 browser journey plus all 3 cable, 4 package and 7 site browser contracts, zero-plugin/plugin e2e, and the 65-capture visual matrix pass; disclosure/history, licence and 138-file package reviews pass; migration `0006` preserves earlier users and Phase 5 rows through upgrade/down/up and encrypted backup/restore; a real zero-plugin image passes non-root, read-only, no-capability health/startup | PLUGIN-01 |
+| 2026-09-04 | PLUGIN-01 | Private integration evidence record | The exact `v1.1.0-rc.1` core candidate and packed integrity are pinned with an exact private package version and supported range; disposable required-plugin and zero-plugin startup runs pass independently. Private package identifiers and hashes remain outside this public repository. Core behavior and migrations are unchanged. | PLUGIN-02 |
