@@ -95,9 +95,10 @@ it cannot supply missing executable behavior.
 
 ## Current next action
 
-Phases 1 through 5 and **PLUGIN-01** through **PLUGIN-03** are complete. The
-next item is **PLUGIN-04**. Verify failed, cancelled, malformed, stale,
-ambiguous and rejected imports are atomic and retain no raw source.
+Phases 1 through 5 and **PLUGIN-01** through **PLUGIN-04** are complete. The
+next item is **PLUGIN-05**. Verify installed plugins do not change any core
+workflow, route, permission, offline behavior or rendered interaction except
+an explicitly accepted private contribution.
 
 ### Phase 1 — Establish the public-safe parity inventory
 
@@ -314,8 +315,14 @@ ambiguous and rejected imports are atomic and retain no raw source.
   fetch/render/retention, malformed and limit errors, stable identities,
   target/update/create preview, append, idempotent reimport and non-destructive
   revised-source absence decisions. No core change or migration was required.
-- [ ] **PLUGIN-04** Verify failed, cancelled, malformed, stale, ambiguous and
+- [x] **PLUGIN-04** Verify failed, cancelled, malformed, stale, ambiguous and
   rejected imports create no blank or partial records and retain no raw source.
+  Evidence: `05e8241` rejects a source-link/package-reference disagreement as
+  an explicit pre-draft ambiguity and expands public atomicity/non-retention
+  coverage across every failure state. The approved private exact packed-core
+  gate compares complete pre/post row snapshots for core entities, provenance,
+  ownership, extension values, drafts and audit, and confirms source bytes,
+  raw-only markers and provider details are neither persisted nor disclosed.
 - [ ] **PLUGIN-05** Verify installed plugins do not change any core workflow,
   route, permission, offline behavior or rendered interaction except an
   explicitly accepted private contribution.
@@ -442,3 +449,4 @@ Next unchecked item:
 | 2026-09-04 | PLUGIN-01 | Private integration evidence record | The exact `v1.2.0-rc.1` core candidate and packed integrity are pinned with an exact private package version and supported range; disposable required-plugin and zero-plugin startup runs pass independently. Private package identifiers and hashes remain outside this public repository. Core behavior and migrations are unchanged. | PLUGIN-02 |
 | 2026-09-04 | PLUGIN-02 | `8c745e5`, `bb7e929`; private integration evidence record | A bounded read-only export projection closes the generic core contract gap; generated private fixtures match frozen Work Request parsing, normalization, identity, atomic reconciliation/apply, idempotent reimport, manual-edit protection, recoverable absence, search and source-shaped/legacy export behavior. The exact packed integration, 93 core tests, E2E/visual suites, disclosure/history scans, licence review and package review pass. No migration is required. | PLUGIN-03 |
 | 2026-09-04 | PLUGIN-03 | Private integration evidence record | Generated pasted HTML/text fixtures match the retained golden parsing, security, normalization, preview and apply behavior. Six focused cases and the exact packed-core gate pass inert parsing, bounded failures, stable identity, normalized preview actions, append, reimport, revised-source absences and raw-content non-retention. No core change or migration is required. | PLUGIN-04 |
+| 2026-09-04 | PLUGIN-04 | `05e8241`; private integration evidence record | Core now rejects conflicting source-link and package-reference targets before draft persistence. Ninety-four public tests plus the exact packed private gate verify complete-row atomicity for late failure, cancellation, malformed source, stale approval, ambiguity and rejected decisions, with sanitized responses and no raw source retention. E2E/visual, disclosure/history, licence and package reviews pass; no migration is required. | PLUGIN-05 |
